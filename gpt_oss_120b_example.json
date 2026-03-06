@@ -1,0 +1,45 @@
+{
+    "id": "chatcmpl-5441d0a7-d456-4bc4-b305-48fee7bb743a",
+    "choices": [
+        {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+                "content": "### Why \u201cfast\u201d matters for language models\n\n| Dimension | Why speed is critical | Typical consequences of slowness |\n",
+                "role": "assistant",
+                "annotations": null,
+                "executed_tools": null,
+                "function_call": null,
+                "reasoning": "The user asks: \"Explain the importance of fast language models\". So I need t",
+                "tool_calls": null
+            }
+        }
+    ],
+    "created": 1772086796,
+    "model": "openai/gpt-oss-20b",
+    "object": "chat.completion",
+    "mcp_list_tools": null,
+    "service_tier": "on_demand",
+    "system_fingerprint": "fp_565badff47",
+    "usage": {
+        "completion_tokens": 2222,
+        "prompt_tokens": 78,
+        "total_tokens": 2300,
+        "completion_time": 2.329932625,
+        "completion_tokens_details": {
+            "reasoning_tokens": 824
+        },
+        "prompt_time": 0.00371422,
+        "prompt_tokens_details": null,
+        "queue_time": 0.016089495,
+        "total_time": 2.333646845
+    },
+    "usage_breakdown": null,
+    "x_groq": {
+        "id": "req_01kjc9n63yerbrfyhr1cv8emes",
+        "debug": null,
+        "seed": 451356200,
+        "usage": null
+    }
+}

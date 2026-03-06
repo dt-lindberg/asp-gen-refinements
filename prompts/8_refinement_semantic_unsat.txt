@@ -1,0 +1,15 @@
+The following ASP program is syntactically valid but produces no answer sets (unsatisfiable). The integrity constraints are contradictory or too restrictive to allow any valid assignment.
+
+Common causes:
+- Two integrity constraints that cannot be simultaneously satisfied
+- Negation-as-failure applied too broadly, ruling out all candidates
+- An integrity constraint that references a predicate or constant not present in the search space
+
+In most cases it is the integrity constraints (rules beginning with :-) that must be revised, not the search space (choice rules and facts).
+
+ASP code:
+<ASP_CODE>
+
+Revise the integrity constraints to make the program satisfiable with exactly one answer set. Return the FULL corrected ASP code below.
+
+Corrected ASP code:

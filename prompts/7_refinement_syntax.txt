@@ -1,0 +1,16 @@
+There are syntactical mistakes in the following ASP code.
+
+IMPORTANT: Clingo's reported line numbers are approximate. Due to parser cascades, the actual error may be several lines away from the reported location. Treat each reported location as a hint and scan the surrounding lines for structural issues (e.g. unsupported operators, malformed aggregates, missing punctuation).
+
+ASP code (with line numbers):
+<ASP_CODE>
+
+Syntax errors:
+<ERRORS>
+
+Code around reported error locations (+/-10 lines):
+<ERROR_CONTEXT>
+
+Rewrite the FULL corrected ASP code below. Only address the syntax errors — do not change the meaning of any rule.
+
+Corrected ASP code:
