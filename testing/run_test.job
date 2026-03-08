@@ -3,7 +3,7 @@
 #SBATCH --job-name=QwenRun
 #SBATCH --partition=gpu_mig
 #SBATCH --time=01:00:00
-#SBATCH --nodes=1
+#SBATCH --gpus=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=9
 #SBATCH --output=slurm_output_%A.out
