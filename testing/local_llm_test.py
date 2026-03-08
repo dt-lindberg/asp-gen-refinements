@@ -1,6 +1,7 @@
 """Test script to run local LLM"""
 
 import os
+import time
 from dotenv import load_dotenv
 from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
 
@@ -53,10 +54,13 @@ if __name__ == "__main__":
 
     # Generate response
     print("Generating response...", flush=True)
+    t_start = time.perf_counter()
     generated_ids = model.generate(
         **inputs,
         max_new_tokens=2048,
     )
+    t_elapsed = time.perf_counter() - t_start
+    print(f"Finished response in {t_elapsed:.1f}s", flush=True)
 
     # Parse the actual response (exclude the prompt tokens)
     output_ids = generated_ids[0][len(inputs.input_ids[0]) :].tolist()
@@ -91,3 +95,7 @@ if __name__ == "__main__":
     print(reasoning)
     print("=== RESPONSE ===")
     print(response)
+    print("\n=== STATS ===")
+    print(
+        f"{len(output_ids)} tokens in {t_elapsed:.1f}s ({len(output_ids) / t_elapsed:.1f} tok/s)"
+    )
