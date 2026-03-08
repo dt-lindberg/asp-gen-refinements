@@ -17,3 +17,6 @@ source .venv/bin/activate
 
 echo "Running local LLM test..."
 python3 local_llm_test.py
+
+echo ""
+echo "Exiting job"
