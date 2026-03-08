@@ -9,6 +9,8 @@ from vllm import LLM, SamplingParams
 load_dotenv()
 
 HF_TOKEN = os.getenv("HF_TOKEN", None)
+THINKING = False
+TEMPERATURE = 0.6  # Recommended @ https://unsloth.ai/docs/models/qwen3.5
 
 
 if __name__ == "__main__":
@@ -22,11 +24,10 @@ if __name__ == "__main__":
         dtype="bfloat16",
         gpu_memory_utilization=0.90,
         max_model_len=8192,
-        trust_remote_code=True,
     )
 
     sampling_params = SamplingParams(
-        temperature=0.0,  # Greedy decoding
+        temperature=TEMPERATURE,
         max_tokens=2048,
     )
 
@@ -44,6 +45,7 @@ if __name__ == "__main__":
     outputs = llm.chat(
         messages=messages,
         sampling_params=sampling_params,
+        chat_template_kwargs={"enable_thinking": THINKING},
         use_tqdm=False,
     )
     t_elapsed = time.perf_counter() - t_start
