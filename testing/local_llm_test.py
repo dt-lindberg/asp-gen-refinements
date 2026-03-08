@@ -18,7 +18,7 @@ if __name__ == "__main__":
     model = Qwen3_5ForConditionalGeneration.from_pretrained(
         model_name,
         torch_dtype="auto",
-        device_map="auto",
+        device_map="cuda:0",
     )
 
     # Initialize processor
