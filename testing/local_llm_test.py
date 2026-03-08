@@ -51,6 +51,7 @@ if __name__ == "__main__":
     ).to(model.device)
 
     # Generate response
+    print("Generating response...", flush=True)
     generated_ids = model.generate(
         **inputs,
         max_new_tokens=16384,
