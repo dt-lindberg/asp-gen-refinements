@@ -19,6 +19,7 @@ if __name__ == "__main__":
         model_name,
         torch_dtype="auto",
         device_map="cuda:0",
+        attn_implementation="sdpa",
     )
 
     # Initialize processor
@@ -42,7 +43,7 @@ if __name__ == "__main__":
         messages,
         tokenize=False,
         add_generation_prompt=True,
-        enable_thinking=True,
+        enable_thinking=False,
     )
 
     inputs = processor(
@@ -54,7 +55,7 @@ if __name__ == "__main__":
     print("Generating response...", flush=True)
     generated_ids = model.generate(
         **inputs,
-        max_new_tokens=16384,
+        max_new_tokens=2048,
     )
 
     # Parse the actual response (exclude the prompt tokens)
