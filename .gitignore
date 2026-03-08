@@ -1,6 +1,7 @@
 mistakes/
 caches/
 archive/*
+*.out
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
