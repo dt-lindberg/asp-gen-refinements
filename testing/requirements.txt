@@ -1,0 +1,8 @@
+# Install for Python 3.13 and CUDA 12.8 @ https://pytorch.org/get-started/locally/
+torch==2.10.0
+torchvision==0.25.0
+
+# Compatible with Python 3.13 and pytorch 2.10.0
+transformers==5.3.0
+
+python-dotenv==1.2.2

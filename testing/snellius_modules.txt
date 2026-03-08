@@ -1,0 +1,14 @@
+CUDA/12.8.0
+CUDA/12.9.1
+
+GCC/14.2.0
+GCC/14.3.0
+GCCcore/14.2.0
+GCCcore/14.3.0
+
+Python/3.13.1-GCCcore-14.2.0
+Python/3.13.5-GCCcore-14.3.0
+
+Rust/1.85.1-GCCcore-14.2.0
+
+Anaconda3/2025.06-1
