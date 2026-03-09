@@ -60,13 +60,13 @@ def format_puzzles_vllm(puzzles: list[str]) -> list[list[dict]]:
     message_batch = []
     for puzzle in puzzles:
         message_batch.append(
-            list(
+            [
                 {
                     "role": "system",
                     "content": "You are an expert Answer Set Program (ASP) coder.",
                 },
                 {"role": "user", "content": puzzle},
-            )
+            ]
         )
 
     return message_batch
