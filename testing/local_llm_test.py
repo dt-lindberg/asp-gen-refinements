@@ -21,7 +21,7 @@ if __name__ == "__main__":
 
     # Initialize vLLM engine — allocates KV cache via PagedAttention upfront
     llm = LLM(
-        model="Qwen/Qwen3.5-4B",
+        model="Qwen/Qwen3.5-9B",
         tensor_parallel_size=1,
         dtype="bfloat16",
         gpu_memory_utilization=0.90,
