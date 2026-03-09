@@ -25,12 +25,12 @@ if __name__ == "__main__":
         tensor_parallel_size=1,
         dtype="bfloat16",
         gpu_memory_utilization=0.90,
-        max_model_len=8192,
+        max_model_len=16384,
     )
 
     sampling_params = SamplingParams(
         temperature=TEMPERATURE,
-        max_tokens=2048,
+        max_tokens=128000,
     )
 
     raw_puzzles = data_gen(dataset_name="train", num_data=NUM_PUZZLES)
@@ -57,5 +57,5 @@ if __name__ == "__main__":
 
     print("\n=== STATS ===\n")
     print(
-        f"Generated {total_tokens} to solve {NUM_PUZZLES} in {t_elapsed:.1f}s ({total_tokens / t_elapsed:.1f} tok/s)"
+        f"Generated {total_tokens} tokens to solve {NUM_PUZZLES} puzzles in {t_elapsed:.1f}s ({total_tokens / t_elapsed:.1f} tok/s)"
     )
