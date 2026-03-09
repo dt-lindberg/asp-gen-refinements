@@ -5,12 +5,14 @@ import time
 
 from dotenv import load_dotenv
 from vllm import LLM, SamplingParams
+from load_puzzles import data_gen, format_puzzles_vllm
 
 load_dotenv()
 
 HF_TOKEN = os.getenv("HF_TOKEN", None)
 THINKING = False
 TEMPERATURE = 0.6  # Recommended @ https://unsloth.ai/docs/models/qwen3.5
+NUM_PUZZLES = 40
 
 
 if __name__ == "__main__":
@@ -31,13 +33,8 @@ if __name__ == "__main__":
         max_tokens=2048,
     )
 
-    # Test message
-    messages = [
-        {
-            "role": "user",
-            "content": "Write a short Answer Set Program (ASP) that models and solves N-queens for N=4. Include comments to explain your reasoning.",
-        }
-    ]
+    raw_puzzles = data_gen(dataset_name="train", num_data=NUM_PUZZLES)
+    messages = format_puzzles_vllm(raw_puzzles)
 
     # Generate response — dispatches to C++/CUDA, no Python token loop
     print("Generating response...", flush=True)
@@ -50,10 +47,15 @@ if __name__ == "__main__":
     )
     t_elapsed = time.perf_counter() - t_start
 
-    response = outputs[0].outputs[0].text
-    n_tokens = len(outputs[0].outputs[0].token_ids)
+    total_tokens = sum(len(o.outputs[0].token_ids) for o in outputs)
 
-    print("=== RESPONSE ===")
-    print(response)
-    print("\n=== STATS ===")
-    print(f"{n_tokens} tokens in {t_elapsed:.1f}s ({n_tokens / t_elapsed:.1f} tok/s)")
+    print("Displaying a few responses...")
+    for i in range(len(outputs)):
+        if i % 10 == 0:
+            print(f"=== RESPONSE {i} ===")
+            print(outputs[i].outputs[0].text)
+
+    print("\n=== STATS ===\n")
+    print(
+        f"Generated {total_tokens} to solve {NUM_PUZZLES} in {t_elapsed:.1f}s ({total_tokens / t_elapsed:.1f} tok/s)"
+    )
