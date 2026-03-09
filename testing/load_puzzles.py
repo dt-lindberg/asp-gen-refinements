@@ -40,17 +40,36 @@ def data_gen(dataset_name="train", num_data=50) -> list[str]:
     return puzzles
 
 
-def format_puzzles_vllm(puzzles: list[str]):
-    """Packages the puzzles into a list of 'messages' for vLLM to process in a batch"""
-    messages = []
+def format_puzzles_vllm(puzzles: list[str]) -> list[list[dict]]:
+    """Packages the puzzles into a list of 'messages' for vLLM to process in a batch.
+
+    Conversation batches are of the form:
+    [
+        [
+            {"role": "system", "content": "System message 1"},
+            {"role": "user", "content": "Message 1"}
+        ],
+        [
+            {"role": "system", "content": "System message 2"},
+            {"role": "user", "content": "Message 2"}
+        ],
+        ...
+    ]
+    """
+
+    message_batch = []
     for puzzle in puzzles:
-        messages.append(
-            {
-                "role": "user",
-                "content": puzzle,
-            }
+        message_batch.append(
+            list(
+                {
+                    "role": "system",
+                    "content": "You are an expert Answer Set Program (ASP) coder.",
+                },
+                {"role": "user", "content": puzzle},
+            )
         )
-    return messages
+
+    return message_batch
 
 
 if __name__ == "__main__":
