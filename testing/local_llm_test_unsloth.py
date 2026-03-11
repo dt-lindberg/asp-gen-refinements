@@ -4,7 +4,7 @@ import os
 import time
 
 from dotenv import load_dotenv
-from unsloth import FastLanguageModel
+from unsloth import FastVisionModel
 
 from load_puzzles import data_gen, format_puzzles_vllm
 
@@ -17,12 +17,28 @@ MAX_SEQ_LENGTH = 16384
 NUM_PUZZLES = 40
 
 
+def format_message_for_vision(messages: list[dict]) -> list[dict]:
+    """Convert plain-string message content to the vision-compatible format
+    (list of typed dicts) that the Qwen3.5 processor expects."""
+    formatted = []
+    for msg in messages:
+        content = msg["content"]
+        if isinstance(content, str):
+            formatted.append(
+                {"role": msg["role"], "content": [{"type": "text", "text": content}]}
+            )
+        else:
+            formatted.append(msg)
+    return formatted
+
+
 if __name__ == "__main__":
     if HF_TOKEN is None:
         raise ValueError("HF_TOKEN not set")
 
     # Load model with Unsloth — 4-bit quantization for reduced VRAM usage
-    model, tokenizer = FastLanguageModel.from_pretrained(
+    # Qwen3.5 is always a vision model, so we use FastVisionModel
+    model, tokenizer = FastVisionModel.from_pretrained(
         model_name="unsloth/Qwen3.5-4B",
         max_seq_length=MAX_SEQ_LENGTH,
         load_in_4bit=True,
@@ -30,7 +46,7 @@ if __name__ == "__main__":
     )
 
     # Enable Unsloth's native 2x faster inference
-    FastLanguageModel.for_inference(model)
+    FastVisionModel.for_inference(model)
 
     raw_puzzles = data_gen(dataset_name="train", num_data=NUM_PUZZLES)
     messages_batch = format_puzzles_vllm(raw_puzzles)
@@ -46,18 +62,20 @@ if __name__ == "__main__":
             # Append /no_think instruction to disable thinking mode
             messages[-1]["content"] += "\n/no_think"
 
-        # Use the underlying text tokenizer to avoid the vision processor
-        # which expects content as list-of-dicts with type/text keys
-        text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
-        inputs = text_tokenizer.apply_chat_template(
-            messages,
-            tokenize=True,
-            add_generation_prompt=True,
+        # Convert plain-string content to vision-compatible format
+        vision_messages = format_message_for_vision(messages)
+
+        input_text = tokenizer.apply_chat_template(
+            vision_messages, add_generation_prompt=True
+        )
+        inputs = tokenizer(
+            text=input_text,
+            add_special_tokens=False,
             return_tensors="pt",
         ).to("cuda")
 
         generated = model.generate(
-            input_ids=inputs,
+            **inputs,
             max_new_tokens=8192,
             temperature=TEMPERATURE,
             top_p=0.95,
@@ -66,7 +84,7 @@ if __name__ == "__main__":
         )
 
         # Decode only the new tokens (skip the input prompt tokens)
-        new_tokens = generated[0][inputs.shape[-1] :]
+        new_tokens = generated[0][inputs["input_ids"].shape[-1] :]
         total_tokens += len(new_tokens)
         response_text = tokenizer.decode(new_tokens, skip_special_tokens=True)
         outputs.append(response_text)
