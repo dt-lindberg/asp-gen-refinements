@@ -15,8 +15,21 @@ module load Python/3.13.5-GCCcore-14.3.0
 
 cd $HOME/Projects/asp-gen-refinements/testing
 
-python3 -m venv .venv
-source .venv/bin/activate
+ENV_TYPE="unsloth"
 
-echo "Installing requirements..."
-pip install -r requirements.txt
+if [ "$ENV_TYPE" = 'normal' ]; then
+	# For installing 'normal env'
+	python3 -m venv .venv
+	source .venv/bin/activate
+	
+	echo "Installing requirements..."
+	pip install -r requirements.txt
+
+	exit 0
+fi
+
+# For installing Unsloth env
+python3 -m venv .venv_unsloth
+source .venv_unsloth/bin/activate
+
+pip install -r requirements_unsloth.txt

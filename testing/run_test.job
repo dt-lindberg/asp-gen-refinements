@@ -14,10 +14,21 @@ module load CUDA/12.8.0
 module load Python/3.13.5-GCCcore-14.3.0
 
 cd $HOME/Projects/asp-gen-refinements/testing
-source .venv/bin/activate
+
+RUN_TYPE="unsloth"
 
 echo "Running local LLM test..."
-python3 local_llm_test.py
+if [ "$RUN_TYPE" = "normal" ]; then
+	source .venv/bin/activate
+	python3 local_llm_test.py
+
+	echo ""
+	echo "Exiting job"
+	exit 0
+fi
+
+source .venv_unsloth/bin/activate
+python3 local_llm_test_unsloth.py
 
 echo ""
 echo "Exiting job"
