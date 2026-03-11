@@ -1,0 +1,23 @@
+# Requirements for Unsloth-based inference (local_llm_test_unsloth.py)
+# Based on official Unsloth notebook: Qwen3_5_(4B)_Vision.ipynb
+
+# Install PyTorch first @ https://pytorch.org/get-started/locally/
+torch==2.8.0
+triton>=3.3.0
+torchvision
+
+# Unsloth and dependencies
+bitsandbytes
+xformers==0.0.32.post2
+unsloth
+unsloth_zoo
+
+# Must match Unsloth's expected transformers version
+transformers==5.2.0
+
+# Required by Unsloth for fast attention
+causal-conv1d==1.6.0
+flash-linear-attention
+
+# Utilities
+python-dotenv==1.2.2

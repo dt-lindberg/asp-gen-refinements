@@ -1,4 +1,4 @@
-"""Test script to run Qwen3.5-9B locally using Unsloth for fast inference."""
+"""Test script to run Qwen3.5-4B locally using Unsloth for fast inference."""
 
 import os
 import time
@@ -23,9 +23,8 @@ if __name__ == "__main__":
 
     # Load model with Unsloth — 4-bit quantization for reduced VRAM usage
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name="unsloth/Qwen3.5-9B",
+        model_name="unsloth/Qwen3.5-4B",
         max_seq_length=MAX_SEQ_LENGTH,
-        dtype="bfloat16",
         load_in_4bit=True,
         token=HF_TOKEN,
     )
@@ -47,15 +46,18 @@ if __name__ == "__main__":
             # Append /no_think instruction to disable thinking mode
             messages[-1]["content"] += "\n/no_think"
 
-        inputs = tokenizer.apply_chat_template(
+        input_text = tokenizer.apply_chat_template(
             messages,
-            tokenize=True,
             add_generation_prompt=True,
+        )
+        inputs = tokenizer(
+            input_text,
+            add_special_tokens=False,
             return_tensors="pt",
         ).to("cuda")
 
         generated = model.generate(
-            input_ids=inputs,
+            **inputs,
             max_new_tokens=8192,
             temperature=TEMPERATURE,
             top_p=0.95,
@@ -64,7 +66,7 @@ if __name__ == "__main__":
         )
 
         # Decode only the new tokens (skip the input prompt tokens)
-        new_tokens = generated[0][inputs.shape[-1] :]
+        new_tokens = generated[0][inputs["input_ids"].shape[-1] :]
         total_tokens += len(new_tokens)
         response_text = tokenizer.decode(new_tokens, skip_special_tokens=True)
         outputs.append(response_text)
