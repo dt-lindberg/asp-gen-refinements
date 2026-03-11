@@ -46,7 +46,10 @@ if __name__ == "__main__":
             # Append /no_think instruction to disable thinking mode
             messages[-1]["content"] += "\n/no_think"
 
-        inputs = tokenizer.apply_chat_template(
+        # Use the underlying text tokenizer to avoid the vision processor
+        # which expects content as list-of-dicts with type/text keys
+        text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+        inputs = text_tokenizer.apply_chat_template(
             messages,
             tokenize=True,
             add_generation_prompt=True,
