@@ -35,3 +35,5 @@ source .venv_unsloth/bin/activate
 pip install -r requirements_unsloth.txt
 # Extra care needed for these
 pip install --no-build-isolation --no-cache-dir --no-deps causal-conv1d==1.6.0 flash-linear-attention
+pip install --no-deps fla-core==0.4.1
+pip install --no-deps einops
