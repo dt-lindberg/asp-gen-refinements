@@ -15,9 +15,6 @@ unsloth_zoo
 # Must match Unsloth's expected transformers version
 transformers==5.2.0
 
-# Required by Unsloth for fast attention
-causal-conv1d==1.6.0
-flash-linear-attention
 
 # Utilities
 python-dotenv==1.2.2

@@ -33,3 +33,5 @@ python3 -m venv .venv_unsloth
 source .venv_unsloth/bin/activate
 
 pip install -r requirements_unsloth.txt
+# Extra care needed for these
+pip install --no-build-isolation causal-conv1d==1.6.0 flash-linear-attention
