@@ -36,6 +36,19 @@ if __name__ == "__main__":
     if HF_TOKEN is None:
         raise ValueError("HF_TOKEN not set")
 
+    # Sanity-check environment
+    import torch
+
+    print(f"Torch version:  {torch.__version__}")
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"CUDA device:    {torch.cuda.get_device_name(0)}")
+        print(
+            f"VRAM:           {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB"
+        )
+    else:
+        raise RuntimeError("CUDA not available — model will fall back to CPU")
+
     # Load model with Unsloth — 4-bit quantization for reduced VRAM usage
     # Qwen3.5 is always a vision model, so we use FastVisionModel
     t_load_start = time.perf_counter()
