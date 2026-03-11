@@ -46,18 +46,15 @@ if __name__ == "__main__":
             # Append /no_think instruction to disable thinking mode
             messages[-1]["content"] += "\n/no_think"
 
-        input_text = tokenizer.apply_chat_template(
+        inputs = tokenizer.apply_chat_template(
             messages,
+            tokenize=True,
             add_generation_prompt=True,
-        )
-        inputs = tokenizer(
-            input_text,
-            add_special_tokens=False,
             return_tensors="pt",
         ).to("cuda")
 
         generated = model.generate(
-            **inputs,
+            input_ids=inputs,
             max_new_tokens=8192,
             temperature=TEMPERATURE,
             top_p=0.95,
@@ -66,7 +63,7 @@ if __name__ == "__main__":
         )
 
         # Decode only the new tokens (skip the input prompt tokens)
-        new_tokens = generated[0][inputs["input_ids"].shape[-1] :]
+        new_tokens = generated[0][inputs.shape[-1] :]
         total_tokens += len(new_tokens)
         response_text = tokenizer.decode(new_tokens, skip_special_tokens=True)
         outputs.append(response_text)
