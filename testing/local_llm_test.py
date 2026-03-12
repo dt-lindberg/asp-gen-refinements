@@ -12,7 +12,7 @@ load_dotenv()
 HF_TOKEN = os.getenv("HF_TOKEN", None)
 THINKING = False
 TEMPERATURE = 0.6  # Recommended @ https://unsloth.ai/docs/models/qwen3.5
-NUM_PUZZLES = 40
+NUM_PUZZLES = 10
 
 
 if __name__ == "__main__":
