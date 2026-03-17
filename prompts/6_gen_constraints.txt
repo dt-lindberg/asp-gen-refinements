@@ -24,7 +24,7 @@ Predicates:
 % We match an employee E with price P and wood type W, where E belongs to employee, P belongs to price, and W belongs to wood_type.
 match(E, P, W)
 
-Constraints in UTF-8 encoding:
+Constraints:
 % No option in any category will ever be used more than once.
 {E1=E2; P1=P2; W1=W2}=0 :- match(E1,P1,W1), match(E2,P2,W2), (E1,P1,W1)!=(E2,P2,W2).
 
@@ -59,7 +59,7 @@ Predicates:
 % We assign a country C with silver medals S and gold medals G, where C belongs to country, S belongs to silver_medals, and G belongs to gold_medals.
 assign(C, S, G)
 
-Constraints in UTF-8 encoding:
+Constraints:
 % No option in any category will ever be used more than once.
 {C1=C2; S1=S2; G1=G2}=0 :- assign(C1,S1,G1), assign(C2,S2,G2), (C1,S1,G1)!=(C2,S2,G2).
 
@@ -94,4 +94,4 @@ Constants:
 Predicates:
 <PREDICATES>
 
-Constraints in UTF-8 encoding:
+Constraints:

@@ -3,7 +3,7 @@ Given a problem, extract all different constants and their categories in the for
 Problem 1:
 Consider N-Queens Puzzle on a chessboard of size 8x8. The goal is to assign 8 queens on the chessboard so that no two queens can share the same row, column, or diagonal.
 
-Constants in UTF-8 encoding:
+Constants:
 index_of_row: 1; 2; 3; 4; 5; 6; 7; 8.
 index_of_column: 1; 2; 3; 4; 5; 6; 7; 8.
 
@@ -14,7 +14,7 @@ Problem 2:
 3. Tabitha's item costs 50 dollars less than the piece made of sandalwood.
 4. The $275 item is either the piece made of ash or Yvette's item.
 
-Constants in UTF-8 encoding:
+Constants:
 employee: "Bonita"; "Yvette"; "Tabitha".
 price: 225; 275; 325.
 wood_type: "ash"; "poplar"; "sandalwood".

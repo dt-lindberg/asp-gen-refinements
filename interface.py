@@ -6,7 +6,6 @@ Usage:
     streamlit run interface.py  (uses mistakes.xlsx by default)
 """
 
-import sys
 import argparse
 import difflib
 import re
@@ -83,13 +82,18 @@ def puzzle_label(idx: int, row: pd.Series) -> str:
 
 
 _text_block_counter = 0
+_puzzle_index = 0
 
 
 def show_text_block(label: str, text: str, height: int = 200):
     global _text_block_counter
     _text_block_counter += 1
     st.text_area(
-        label, value=text, height=height, disabled=True, key=f"tb_{_text_block_counter}"
+        label,
+        value=text,
+        height=height,
+        disabled=True,
+        key=f"p{_puzzle_index}_tb_{_text_block_counter}",
     )
 
 
@@ -124,21 +128,27 @@ _CODE_DIV = (
     "padding:0 6px;font-variant-ligatures:none;font-feature-settings:'liga' 0;"
 )
 
+
 def show_code_block(code: str, error_lines: set[int] = None):
     """Render a code block with optional ⚠ markers on error lines."""
     error_lines = error_lines or set()
     rows = []
     for line_num, line in enumerate(code.splitlines(), start=1):
         escaped = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        warn = '<span style="color:#ffaa00;user-select:none;">⚠</span>' if line_num in error_lines else "<span></span>"
+        warn = (
+            '<span style="color:#ffaa00;user-select:none;">⚠</span>'
+            if line_num in error_lines
+            else "<span></span>"
+        )
         rows.append(
             f'<div style="background:transparent;{_CODE_DIV}">'
             f'<span><span style="color:#aaa;user-select:none;margin-right:10px;">{line_num:>3}  </span>{escaped}</span>'
-            f'{warn}</div>'
+            f"{warn}</div>"
         )
     html = (
         '<div style="overflow-x:auto;border:1px solid #ddd;border-radius:4px;padding:4px 0">'
-        + "".join(rows) + "</div>"
+        + "".join(rows)
+        + "</div>"
     )
     st.html(html)
 
@@ -177,7 +187,9 @@ def show_inline_diff(before: str, after: str, error_lines: set[int] = None):
         content = entry[2:]
         if tag == "? ":
             continue
-        escaped = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        escaped = (
+            content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        )
         if tag == "  ":
             bg, marker = "transparent", " "
             line_num += 1
@@ -185,19 +197,27 @@ def show_inline_diff(before: str, after: str, error_lines: set[int] = None):
             bg, marker = "rgba(255,80,80,0.3)", "-"  # rgba(red, green, blue, opacity)
             line_num += 1
         elif tag == "+ ":
-            bg, marker = "rgba(80,200,80,0.3)", "+"  # increase opacity to make colours more vivid
+            bg, marker = (
+                "rgba(80,200,80,0.3)",
+                "+",
+            )  # increase opacity to make colours more vivid
         else:
             continue
-        warn = '<span style="color:#ffaa00;user-select:none;">⚠</span>' if line_num in error_lines else "<span></span>"
+        warn = (
+            '<span style="color:#ffaa00;user-select:none;">⚠</span>'
+            if line_num in error_lines
+            else "<span></span>"
+        )
         rows.append(
             f'<div style="background:{bg};{_CODE_DIV}">'
             f'<span><span style="color:#aaa;user-select:none;margin-right:10px;">{line_num:>3} {marker}</span>{escaped}</span>'
-            f'{warn}</div>'
+            f"{warn}</div>"
         )
 
     html = (
         '<div style="overflow-x:auto;border:1px solid #ddd;border-radius:4px;padding:4px 0">'
-        + "".join(rows) + "</div>"
+        + "".join(rows)
+        + "</div>"
     )
     st.html(html)
 
@@ -224,12 +244,16 @@ def show_step8(row: pd.Series):
             st.markdown(f"**Attempt {i}**")
             trigger_errors = cell(row, f"clingo_errors_{i - 1}")
             if trigger_errors:
-                show_text_block(f"Feedback triggering attempt {i}", trigger_errors, height=100)
+                show_text_block(
+                    f"Feedback triggering attempt {i}", trigger_errors, height=100
+                )
             if code:
                 prev_code = all_codes[i - 1]
                 if prev_code != code:
                     st.markdown(f"**Diff (attempt {i})**")
-                    show_inline_diff(prev_code, code, error_lines=parse_error_lines(trigger_errors))
+                    show_inline_diff(
+                        prev_code, code, error_lines=parse_error_lines(trigger_errors)
+                    )
                 else:
                     st.caption(f"Attempt {i}: no changes from previous version")
             metric_cols = st.columns(2)
@@ -301,6 +325,8 @@ def main():
             "Select puzzle", options=range(len(df)), format_func=lambda i: labels[i]
         )
 
+    global _puzzle_index
+    _puzzle_index = selected
     row = df.iloc[selected]
 
     st.subheader(f"Puzzle {selected + 1}")

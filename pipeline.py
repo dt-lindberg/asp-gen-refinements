@@ -4,6 +4,7 @@ import pandas as pd
 
 import openai
 from dotenv import load_dotenv
+import time
 from time import strftime
 from clingo.control import Control
 from clingo.symbol import parse_term
@@ -19,6 +20,7 @@ setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
 logger = get_logger(__name__)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MAX_RETRY_ATTEMPTS = 5
 
 
 # clingo context used to define python functions in clingo
@@ -119,16 +121,47 @@ class Pipeline:
                         logger.error(f"Gemini API failed with error={e}")
                 elif self.engine == "gpt-oss-120b":
                     messages = [{"role": "user", "content": prompt}]
-                    try:
-                        response = self.groq_client.chat.completions.create(
-                            messages=messages,
-                            model="openai/gpt-oss-120b",
-                            temperature=self.temperature,
-                            max_tokens=self.max_tokens,
-                        )
-                        self.cache[kind][prompt] = response.model_dump()
-                    except Exception as e:
-                        logger.error(f"Groq API failed with error={e}")
+                    for attempt in range(GROQ_MAX_RETRY_ATTEMPTS):
+                        try:
+                            response = self.groq_client.chat.completions.create(
+                                messages=messages,
+                                model="openai/gpt-oss-120b",
+                                temperature=self.temperature,
+                                max_tokens=self.max_tokens,
+                            )
+                            self.cache[kind][prompt] = response.model_dump()
+                            break
+                        except Exception as e:
+                            if attempt < GROQ_MAX_RETRY_ATTEMPTS - 1:
+                                wait = 2 ** (attempt + 1)
+                                logger.info(
+                                    f"Groq API failed (attempt {attempt + 1}/{GROQ_MAX_RETRY_ATTEMPTS}), retrying in {wait}s: {e}"
+                                )
+                                time.sleep(wait)
+                            else:
+                                logger.error(f"Groq API failed with error={e}")
+                elif self.engine == "qwen3-32b":
+                    messages = [{"role": "user", "content": prompt}]
+                    for attempt in range(GROQ_MAX_RETRY_ATTEMPTS):
+                        try:
+                            response = self.groq_client.chat.completions.create(
+                                messages=messages,
+                                model="qwen/qwen3-32b",
+                                temperature=self.temperature,
+                                max_tokens=self.max_tokens,
+                                reasoning_effort="none",
+                            )
+                            self.cache[kind][prompt] = response.model_dump()
+                            break
+                        except Exception as e:
+                            if attempt < GROQ_MAX_RETRY_ATTEMPTS - 1:
+                                wait = 2 ** (attempt + 1)
+                                logger.info(
+                                    f"Groq API failed (attempt {attempt + 1}/{GROQ_MAX_RETRY_ATTEMPTS}), retrying in {wait}s: {e}"
+                                )
+                                time.sleep(wait)
+                            else:
+                                logger.error(f"Groq API failed with error={e}")
                 elif self.engine == "gpt-4":
                     messages = [{"role": "user", "content": prompt}]
                     try:
@@ -159,7 +192,7 @@ class Pipeline:
             return self.cache[kind][prompt]["candidates"][0]["content"]["parts"][0][
                 "text"
             ].strip()
-        elif self.engine in ("gpt-4", "gpt-oss-120b"):
+        elif self.engine in ("gpt-4", "gpt-oss-120b", "qwen3-32b"):
             return self.cache[kind][prompt]["choices"][0]["message"]["content"].strip()
         return self.cache[kind][prompt]["choices"][0]["text"].strip()
 
@@ -174,10 +207,10 @@ class Pipeline:
             try:
                 if self.engine == "gemini-3-flash-preview":
                     general, ex1, ex2, ex3 = prompt.split("\n\nProblem ")
-                    ex1, response1 = ex1.split("\n\nConstraints in UTF-8 encoding:\n")
-                    ex2, response2 = ex2.split("\n\nConstraints in UTF-8 encoding:\n")
-                    ex1 = "Problem " + ex1 + "\n\nConstraints in UTF-8 encoding:"
-                    ex2 = "Problem " + ex2 + "\n\nConstraints in UTF-8 encoding:"
+                    ex1, response1 = ex1.split("\n\nConstraints:\n")
+                    ex2, response2 = ex2.split("\n\nConstraints:\n")
+                    ex1 = "Problem " + ex1 + "\n\nConstraints:"
+                    ex2 = "Problem " + ex2 + "\n\nConstraints:"
                     ex3 = "Problem " + ex3
 
                     system_instruction = "You are a semantic parser to turn clues in a problem into logical rules using only provided constants and predicates."
@@ -218,10 +251,10 @@ class Pipeline:
 
                 elif self.engine == "gpt-oss-120b":
                     general, ex1, ex2, ex3 = prompt.split("\n\nProblem ")
-                    ex1, response1 = ex1.split("\n\nConstraints in UTF-8 encoding:\n")
-                    ex2, response2 = ex2.split("\n\nConstraints in UTF-8 encoding:\n")
-                    ex1 = "Problem " + ex1 + "\n\nConstraints in UTF-8 encoding:"
-                    ex2 = "Problem " + ex2 + "\n\nConstraints in UTF-8 encoding:"
+                    ex1, response1 = ex1.split("\n\nConstraints:\n")
+                    ex2, response2 = ex2.split("\n\nConstraints:\n")
+                    ex1 = "Problem " + ex1 + "\n\nConstraints:"
+                    ex2 = "Problem " + ex2 + "\n\nConstraints:"
                     ex3 = "Problem " + ex3
                     messages = [
                         {
@@ -246,13 +279,44 @@ class Pipeline:
                         max_tokens=self.max_tokens,
                     )
                     self.cache[kind][prompt] = response.model_dump()
+                elif self.engine == "qwen3-32b":
+                    general, ex1, ex2, ex3 = prompt.split("\n\nProblem ")
+                    ex1, response1 = ex1.split("\n\nConstraints:\n")
+                    ex2, response2 = ex2.split("\n\nConstraints:\n")
+                    ex1 = "Problem " + ex1 + "\n\nConstraints:"
+                    ex2 = "Problem " + ex2 + "\n\nConstraints:"
+                    ex3 = "Problem " + ex3
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": "You are a semantic parser to turn clues in a problem into logical rules using only provided constants and predicates.",
+                        },
+                        {"role": "user", "content": general},
+                        {
+                            "role": "assistant",
+                            "content": "Ok. I will only write constraints under the provided forms.",
+                        },
+                        {"role": "user", "content": ex1},
+                        {"role": "assistant", "content": response1},
+                        {"role": "user", "content": ex2},
+                        {"role": "assistant", "content": response2},
+                        {"role": "user", "content": ex3},
+                    ]
+                    response = self.groq_client.chat.completions.create(
+                        messages=messages,
+                        model="qwen/qwen3-32b",
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens,
+                        reasoning_effort="none",
+                    )
+                    self.cache[kind][prompt] = response.model_dump()
                 elif self.engine == "gpt-4":
                     # split prompt into different messages
                     general, ex1, ex2, ex3 = prompt.split("\n\nProblem ")
-                    ex1, response1 = ex1.split("\n\nConstraints in UTF-8 encoding:\n")
-                    ex2, response2 = ex2.split("\n\nConstraints in UTF-8 encoding:\n")
-                    ex1 = "Problem " + ex1 + "\n\nConstraints in UTF-8 encoding:"
-                    ex2 = "Problem " + ex2 + "\n\nConstraints in UTF-8 encoding:"
+                    ex1, response1 = ex1.split("\n\nConstraints:\n")
+                    ex2, response2 = ex2.split("\n\nConstraints:\n")
+                    ex1 = "Problem " + ex1 + "\n\nConstraints:"
+                    ex2 = "Problem " + ex2 + "\n\nConstraints:"
                     ex3 = "Problem " + ex3
                     messages = [
                         {
@@ -301,7 +365,7 @@ class Pipeline:
             return self.cache[kind][prompt]["candidates"][0]["content"]["parts"][0][
                 "text"
             ].strip()
-        elif self.engine in ("gpt-4", "gpt-oss-120b"):
+        elif self.engine in ("gpt-4", "gpt-oss-120b", "qwen3-32b"):
             return self.cache[kind][prompt]["choices"][0]["message"]["content"].strip()
         return self.cache[kind][prompt]["choices"][0]["text"].strip()
 
@@ -392,7 +456,7 @@ class Pipeline:
         cached = self.cache.get(kind, {}).get(prompt)
         if cached is None:
             return ""
-        if self.engine == "gpt-oss-120b":
+        if self.engine in ("gpt-oss-120b", "qwen3-32b"):
             return cached["choices"][0]["message"].get("reasoning") or ""
         return ""
 
