@@ -1,0 +1,23 @@
+#!/bin/bash
+
+#SBATCH --job-name=EnvDown
+#SBATCH --partition=rome
+#SBATCH --time=00:15:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --output=slurm_output_%A.out
+
+module purge
+module load 2025
+module load CUDA/12.8.0
+module load Python/3.13.5-GCCcore-14.3.0
+
+cd $HOME/Projects/llm-turbo/src
+
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Build llama-cpp-python with CUDA GPU support
+export CMAKE_ARGS="-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=80"
+pip install --no-cache-dir -r requirements.txt
