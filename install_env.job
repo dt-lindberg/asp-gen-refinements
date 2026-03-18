@@ -15,15 +15,22 @@ module load CMake/4.0.3-GCCcore-14.3.0
 
 cd $HOME/Projects/asp-gen-refinements
 
-# For installing 'normal env'
+# Initialize venv
 python3 -m venv .venv
 source .venv/bin/activate
 
-echo "[SLURM] Installing requirements..."
+echo "[SLURM] Installing vLLM requirements..."
+
+# Build llama-cpp-python with CUDA GPU support
+export CMAKE_ARGS="-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=80"
+pip install --no-cache-dir -r requirements_vllm.txt
+
+echo "[SLURM] Finished install. Proceeding with Clingo et al..."
+
+# Needed as we're installing with no dependencies
 pip install setuptools wheel scikit-build
 
 export CMAKE_ARGS="-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
 pip install --no-deps --no-build-isolation -r requirements.txt
 
 echo "[SLURM] Exiting"
-

@@ -1,0 +1,8 @@
+# Requirements for running vLLM
+# vLLM install for Python 3.13 and CUDA 12.8 @ https://pytorch.org/get-started/locally/
+torch==2.10.0
+accelerate==1.13.0
+vllm==0.17.0
+
+# Transformers compatible with Python 3.13, pytorch 2.10.0, and vLLM 0.17
+transformers==4.57.6

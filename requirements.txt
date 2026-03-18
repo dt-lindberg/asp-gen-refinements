@@ -1,3 +1,8 @@
+# Dump of requirements for running OG gpt-asp-rules repository, includes Clingo
+# but also other help like python-dotenv and API libraries
+
+clingo==5.6.0
+
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.3
 aiosignal==1.4.0
@@ -11,7 +16,6 @@ certifi==2026.1.4
 cffi==2.0.0
 charset-normalizer==3.4.4
 click==8.3.1
-clingo==5.6.0
 cryptography==46.0.5
 distro==1.9.0
 et_xmlfile==2.0.0

@@ -2,30 +2,24 @@ import json
 import os
 import pandas as pd
 
-import openai
-from dotenv import load_dotenv
-import time
 from time import strftime
 from clingo.control import Control
 from clingo.symbol import parse_term
-from google import genai
-from google.genai import types
-from groq import Groq
 
 from logger import setup_logging, get_logger
 
-load_dotenv()
-
 setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
 logger = get_logger(__name__)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MAX_RETRY_ATTEMPTS = 5
+
+_CONSTRAINTS_SYSTEM = (
+    "You are a semantic parser to turn clues in a problem into logical rules "
+    "using only provided constants and predicates."
+)
+_CONSTRAINTS_ASSISTANT_ACK = "Ok. I will only write constraints under the provided forms."
 
 
 # clingo context used to define python functions in clingo
 class Context:
-    # get features/words from a string of space separated words
     def gen_feature(self, x):
         ret = []
         for term in str(x.string).split(" "):
@@ -35,37 +29,30 @@ class Context:
 
 class Pipeline:
     def __init__(self, args):
-        self.asp_program = ""
-        ###########
-        # Gemini API
-        ###########
-        self.client = genai.Client(api_key=GEMINI_API_KEY)
-        self.thinking_level = "medium"
-        ###########
-        # Groq API
-        ###########
-        self.groq_client = Groq(api_key=GROQ_API_KEY)
-        ###########
-        # GPT-3
-        ###########
-        self.engine = "text-davinci-003"
-        self.temperature = 0.0
+        self.engine = "qwen3-30b-local"
+        self.temperature = 0.6
         self.max_tokens = 1500
-        self.path_prompt = {}  # store the mapping from kind (str) to path of prompt file (str)
-        self.prompt = {}  # a mapping from prompt kind (str) to the prompt (str)
-        ###########
-        # Cache
-        ###########
-        self.path_cache = {}  # store the mapping from kind (str) to path of cache file (str)
-        self.cache = {}  # store the mapping from kind (str) to cached responses (dictionary)
+        self.path_prompt = {}
+        self.prompt = {}
+        self.path_cache = {}
+        self.cache = {}
+        self._vllm_engine = None
         os.makedirs("mistakes", exist_ok=True)
-        self.path_mistakes = f"mistakes/mistakes_{strftime('%m%d_%H%M%S')}.xlsx"  # file to store the wrong pridictions
-        self.mistakes = []  # store the wrong predictions
+        self.path_mistakes = f"mistakes/mistakes_{strftime('%m%d_%H%M%S')}.xlsx"
+        self.mistakes = []
 
         for k, v in args.items():
             setattr(self, k, v)
-        # initialze openai account
-        openai.api_key = os.getenv("OPENAI_API_KEY")
+
+    def _get_engine(self):
+        if self._vllm_engine is None:
+            from vllm_engine import VLLMEngine
+
+            self._vllm_engine = VLLMEngine(
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+            )
+        return self._vllm_engine
 
     def load_prompt(self):
         for kind in self.path_prompt:
@@ -81,350 +68,137 @@ class Pipeline:
                 self.cache[kind] = {}
 
     def save_cache(self):
+        os.makedirs("caches", exist_ok=True)
         for kind in self.path_cache:
             with open(self.path_cache[kind], "w") as f:
                 json.dump(self.cache[kind], f)
 
-    # take a kind and replace (dictionary), return the GPT3 response
-    def gen_response(self, kind, replace):
-        # obtain the whole prompt
-        prompt = self.prompt[kind]
-        for k in replace:
-            prompt = prompt.replace(k, replace[k])
-        # generate and cache the response in cache if it's not cached before
-        if prompt not in self.cache[kind]:
-            try:
-                if self.engine == "gemini-3-flash-preview":
-                    # Define contents suitable for Gemini API, equivalent to messages
-                    contents = [
-                        types.Content(
-                            role="user",
-                            parts=[types.Part(text=prompt)],
-                        )
-                    ]
-                    try:
-                        gemini_response = self.client.models.generate_content(
-                            model=self.engine,
-                            contents=contents,
-                            config=types.GenerateContentConfig(
-                                thinking_config=types.ThinkingConfig(
-                                    thinking_level=self.thinking_level
-                                ),
-                                temperature=self.temperature,
-                                max_output_tokens=self.max_tokens,
-                            ),
-                        )
-                        self.cache[kind][prompt] = json.loads(
-                            gemini_response.model_dump_json()
-                        )
-                    except Exception as e:
-                        logger.error(f"Gemini API failed with error={e}")
-                elif self.engine == "gpt-oss-120b":
-                    messages = [{"role": "user", "content": prompt}]
-                    for attempt in range(GROQ_MAX_RETRY_ATTEMPTS):
-                        try:
-                            response = self.groq_client.chat.completions.create(
-                                messages=messages,
-                                model="openai/gpt-oss-120b",
-                                temperature=self.temperature,
-                                max_tokens=self.max_tokens,
-                            )
-                            self.cache[kind][prompt] = response.model_dump()
-                            break
-                        except Exception as e:
-                            if attempt < GROQ_MAX_RETRY_ATTEMPTS - 1:
-                                wait = 2 ** (attempt + 1)
-                                logger.info(
-                                    f"Groq API failed (attempt {attempt + 1}/{GROQ_MAX_RETRY_ATTEMPTS}), retrying in {wait}s: {e}"
-                                )
-                                time.sleep(wait)
-                            else:
-                                logger.error(f"Groq API failed with error={e}")
-                elif self.engine == "qwen3-32b":
-                    messages = [{"role": "user", "content": prompt}]
-                    for attempt in range(GROQ_MAX_RETRY_ATTEMPTS):
-                        try:
-                            response = self.groq_client.chat.completions.create(
-                                messages=messages,
-                                model="qwen/qwen3-32b",
-                                temperature=self.temperature,
-                                max_tokens=self.max_tokens,
-                                reasoning_effort="none",
-                            )
-                            self.cache[kind][prompt] = response.model_dump()
-                            break
-                        except Exception as e:
-                            if attempt < GROQ_MAX_RETRY_ATTEMPTS - 1:
-                                wait = 2 ** (attempt + 1)
-                                logger.info(
-                                    f"Groq API failed (attempt {attempt + 1}/{GROQ_MAX_RETRY_ATTEMPTS}), retrying in {wait}s: {e}"
-                                )
-                                time.sleep(wait)
-                            else:
-                                logger.error(f"Groq API failed with error={e}")
-                elif self.engine == "gpt-4":
-                    messages = [{"role": "user", "content": prompt}]
-                    try:
-                        self.cache[kind][prompt] = openai.ChatCompletion.create(
-                            messages=messages,
-                            model="gpt-4",
-                            temperature=self.temperature,
-                            max_tokens=self.max_tokens,
-                        )
-                    except Exception as e:
-                        logger.error(f"GPT API failed with error={e}")
-                else:
-                    self.cache[kind][prompt] = openai.Completion.create(
-                        prompt=prompt,
-                        engine=self.engine,
-                        temperature=self.temperature,
-                        max_tokens=self.max_tokens,
-                    )
-
-                # Save response to cache
-                self.save_cache()
-
-            except Exception as e:
-                logger.error(f"Calling APIs failed with error={e}")
-                breakpoint()
-                self.cache[kind][prompt] = None
-        if self.engine == "gemini-3-flash-preview":
-            return self.cache[kind][prompt]["candidates"][0]["content"]["parts"][0][
-                "text"
-            ].strip()
-        elif self.engine in ("gpt-4", "gpt-oss-120b", "qwen3-32b"):
-            return self.cache[kind][prompt]["choices"][0]["message"]["content"].strip()
-        return self.cache[kind][prompt]["choices"][0]["text"].strip()
-
-    # take a kind and replace (dictionary), return the GPT3 response
-    def gen_response_constraints(self, kind, replace):
-        # obtain the whole prompt
-        prompt = self.prompt[kind]
-        for k in replace:
-            prompt = prompt.replace(k, replace[k])
-        # generate and cache the response in cache if it's not cached before
-        if prompt not in self.cache[kind]:
-            try:
-                if self.engine == "gemini-3-flash-preview":
-                    general, ex1, ex2, ex3 = prompt.split("\n\nProblem ")
-                    ex1, response1 = ex1.split("\n\nConstraints:\n")
-                    ex2, response2 = ex2.split("\n\nConstraints:\n")
-                    ex1 = "Problem " + ex1 + "\n\nConstraints:"
-                    ex2 = "Problem " + ex2 + "\n\nConstraints:"
-                    ex3 = "Problem " + ex3
-
-                    system_instruction = "You are a semantic parser to turn clues in a problem into logical rules using only provided constants and predicates."
-
-                    contents = [
-                        types.Content(role="user", parts=[types.Part(text=general)]),
-                        types.Content(
-                            role="model",
-                            parts=[
-                                types.Part(
-                                    text="Ok. I will only write constraints under the provided forms."
-                                )
-                            ],
-                        ),
-                        types.Content(role="user", parts=[types.Part(text=ex1)]),
-                        types.Content(role="model", parts=[types.Part(text=response1)]),
-                        types.Content(role="user", parts=[types.Part(text=ex2)]),
-                        types.Content(role="model", parts=[types.Part(text=response2)]),
-                        types.Content(role="user", parts=[types.Part(text=ex3)]),
-                    ]
-
-                    gemini_response = self.client.models.generate_content(
-                        model=self.engine,
-                        contents=contents,
-                        config=types.GenerateContentConfig(
-                            system_instruction=system_instruction,
-                            thinking_config=types.ThinkingConfig(
-                                thinking_level=self.thinking_level
-                            ),
-                            temperature=self.temperature,
-                            max_output_tokens=self.max_tokens,
-                        ),
-                    )
-
-                    self.cache[kind][prompt] = json.loads(
-                        gemini_response.model_dump_json()
-                    )
-
-                elif self.engine == "gpt-oss-120b":
-                    general, ex1, ex2, ex3 = prompt.split("\n\nProblem ")
-                    ex1, response1 = ex1.split("\n\nConstraints:\n")
-                    ex2, response2 = ex2.split("\n\nConstraints:\n")
-                    ex1 = "Problem " + ex1 + "\n\nConstraints:"
-                    ex2 = "Problem " + ex2 + "\n\nConstraints:"
-                    ex3 = "Problem " + ex3
-                    messages = [
-                        {
-                            "role": "system",
-                            "content": "You are a semantic parser to turn clues in a problem into logical rules using only provided constants and predicates.",
-                        },
-                        {"role": "user", "content": general},
-                        {
-                            "role": "assistant",
-                            "content": "Ok. I will only write constraints under the provided forms.",
-                        },
-                        {"role": "user", "content": ex1},
-                        {"role": "assistant", "content": response1},
-                        {"role": "user", "content": ex2},
-                        {"role": "assistant", "content": response2},
-                        {"role": "user", "content": ex3},
-                    ]
-                    response = self.groq_client.chat.completions.create(
-                        messages=messages,
-                        model="openai/gpt-oss-120b",
-                        temperature=self.temperature,
-                        max_tokens=self.max_tokens,
-                    )
-                    self.cache[kind][prompt] = response.model_dump()
-                elif self.engine == "qwen3-32b":
-                    general, ex1, ex2, ex3 = prompt.split("\n\nProblem ")
-                    ex1, response1 = ex1.split("\n\nConstraints:\n")
-                    ex2, response2 = ex2.split("\n\nConstraints:\n")
-                    ex1 = "Problem " + ex1 + "\n\nConstraints:"
-                    ex2 = "Problem " + ex2 + "\n\nConstraints:"
-                    ex3 = "Problem " + ex3
-                    messages = [
-                        {
-                            "role": "system",
-                            "content": "You are a semantic parser to turn clues in a problem into logical rules using only provided constants and predicates.",
-                        },
-                        {"role": "user", "content": general},
-                        {
-                            "role": "assistant",
-                            "content": "Ok. I will only write constraints under the provided forms.",
-                        },
-                        {"role": "user", "content": ex1},
-                        {"role": "assistant", "content": response1},
-                        {"role": "user", "content": ex2},
-                        {"role": "assistant", "content": response2},
-                        {"role": "user", "content": ex3},
-                    ]
-                    response = self.groq_client.chat.completions.create(
-                        messages=messages,
-                        model="qwen/qwen3-32b",
-                        temperature=self.temperature,
-                        max_tokens=self.max_tokens,
-                        reasoning_effort="none",
-                    )
-                    self.cache[kind][prompt] = response.model_dump()
-                elif self.engine == "gpt-4":
-                    # split prompt into different messages
-                    general, ex1, ex2, ex3 = prompt.split("\n\nProblem ")
-                    ex1, response1 = ex1.split("\n\nConstraints:\n")
-                    ex2, response2 = ex2.split("\n\nConstraints:\n")
-                    ex1 = "Problem " + ex1 + "\n\nConstraints:"
-                    ex2 = "Problem " + ex2 + "\n\nConstraints:"
-                    ex3 = "Problem " + ex3
-                    messages = [
-                        {
-                            "role": "system",
-                            "content": "You are a semantic parser to turn clues in a problem into logical rules using only provided constants and predicates.",
-                        },
-                        {"role": "system", "name": "example_user", "content": general},
-                        {
-                            "role": "system",
-                            "name": "example_assistant",
-                            "content": "Ok. I will only write constraints under the provided forms.",
-                        },
-                        {"role": "system", "name": "example_user", "content": ex1},
-                        {
-                            "role": "system",
-                            "name": "example_assistant",
-                            "content": response1,
-                        },
-                        {"role": "system", "name": "example_user", "content": ex2},
-                        {
-                            "role": "system",
-                            "name": "example_assistant",
-                            "content": response2,
-                        },
-                        {"role": "user", "content": ex3},
-                    ]
-                    self.cache[kind][prompt] = openai.ChatCompletion.create(
-                        messages=messages,
-                        model="gpt-4",
-                        temperature=self.temperature,
-                        max_tokens=self.max_tokens,
-                    )
-                else:
-                    self.cache[kind][prompt] = openai.Completion.create(
-                        prompt=prompt,
-                        engine=self.engine,
-                        temperature=self.temperature,
-                        max_tokens=self.max_tokens,
-                    )
-                self.save_cache()
-            except Exception as e:
-                logger.error(f"Calling APIs failed with error={e}")
-                breakpoint()
-                self.cache[kind][prompt] = None
-        if self.engine == "gemini-3-flash-preview":
-            return self.cache[kind][prompt]["candidates"][0]["content"]["parts"][0][
-                "text"
-            ].strip()
-        elif self.engine in ("gpt-4", "gpt-oss-120b", "qwen3-32b"):
-            return self.cache[kind][prompt]["choices"][0]["message"]["content"].strip()
-        return self.cache[kind][prompt]["choices"][0]["text"].strip()
-
-    # take a kind and replace (dictionary), return the GPT response
-    # NOTE: never called, no Gemini implementation made
-    def gen_response_bk(self, kind, replace):
-        # obtain the whole prompt
-        prompt = self.prompt[kind]
-        for k in replace:
-            prompt = prompt.replace(k, replace[k])
-        # generate and cache the response in cache if it's not cached before
-        if prompt not in self.cache[kind]:
-            try:
-                self.cache[kind][prompt] = openai.Completion.create(
-                    prompt=prompt,
-                    engine=self.engine,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                )
-                self.save_cache()
-            except Exception as e:
-                print(e)
-                breakpoint()
-                self.cache[kind][prompt] = None
-        return self.cache[kind][prompt]["choices"][0]["text"].strip()
-
-    # use ASP (clingo) to find answer sets
-    def gen_answer_set(self, program, opt=False):
-        """
-        Returns a tuple of (error, answer_sets), error=None if no error.
+    def gen_response_batch(self, kind, replaces):
+        """Generate responses for a batch of puzzles.
 
         Args:
-            program (str): a string of ASP program
-            opt (bool): if true, only optimal answer sets are returned
-                        leave it to False when there is no weak constraint
+            kind: prompt kind string.
+            replaces: list of replace dicts (one per puzzle).
+
+        Returns:
+            list of response text strings.
+        """
+        prompts = []
+        for replace in replaces:
+            prompt = self.prompt[kind]
+            for k, v in replace.items():
+                prompt = prompt.replace(k, v)
+            prompts.append(prompt)
+
+        responses = [None] * len(prompts)
+        miss_indices = []
+        miss_messages = []
+
+        for i, prompt in enumerate(prompts):
+            if prompt in self.cache[kind]:
+                responses[i] = self.cache[kind][prompt]
+            else:
+                miss_indices.append(i)
+                miss_messages.append([{"role": "user", "content": prompt}])
+
+        if miss_messages:
+            generated = self._get_engine().generate_batch(miss_messages)
+            for idx, resp in zip(miss_indices, generated):
+                self.cache[kind][prompts[idx]] = resp
+                responses[idx] = resp
+            self.save_cache()
+
+        return responses
+
+    def gen_response_constraints_batch(self, kind, replaces):
+        """Generate constraint responses for a batch of puzzles (multi-turn format).
+
+        Args:
+            kind: prompt kind string.
+            replaces: list of replace dicts (one per puzzle).
+
+        Returns:
+            list of response text strings.
+        """
+        prompts = []
+        messages_list = []
+
+        for replace in replaces:
+            prompt = self.prompt[kind]
+            for k, v in replace.items():
+                prompt = prompt.replace(k, v)
+            prompts.append(prompt)
+
+            general, ex1, ex2, ex3 = prompt.split("\n\nProblem ")
+            ex1, response1 = ex1.split("\n\nConstraints:\n")
+            ex2, response2 = ex2.split("\n\nConstraints:\n")
+            ex1 = "Problem " + ex1 + "\n\nConstraints:"
+            ex2 = "Problem " + ex2 + "\n\nConstraints:"
+            ex3 = "Problem " + ex3
+            messages = [
+                {"role": "system", "content": _CONSTRAINTS_SYSTEM},
+                {"role": "user", "content": general},
+                {"role": "assistant", "content": _CONSTRAINTS_ASSISTANT_ACK},
+                {"role": "user", "content": ex1},
+                {"role": "assistant", "content": response1},
+                {"role": "user", "content": ex2},
+                {"role": "assistant", "content": response2},
+                {"role": "user", "content": ex3},
+            ]
+            messages_list.append(messages)
+
+        responses = [None] * len(prompts)
+        miss_indices = []
+        miss_messages = []
+
+        for i, prompt in enumerate(prompts):
+            if prompt in self.cache[kind]:
+                responses[i] = self.cache[kind][prompt]
+            else:
+                miss_indices.append(i)
+                miss_messages.append(messages_list[i])
+
+        if miss_messages:
+            generated = self._get_engine().generate_batch(miss_messages)
+            for idx, resp in zip(miss_indices, generated):
+                self.cache[kind][prompts[idx]] = resp
+                responses[idx] = resp
+            self.save_cache()
+
+        return responses
+
+    def gen_response(self, kind, replace):
+        """Single-puzzle convenience wrapper around gen_response_batch."""
+        return self.gen_response_batch(kind, [replace])[0]
+
+    def gen_response_constraints(self, kind, replace):
+        """Single-puzzle convenience wrapper around gen_response_constraints_batch."""
+        return self.gen_response_constraints_batch(kind, [replace])[0]
+
+    def gen_answer_set(self, program, opt=False):
+        """Run Clingo to find answer sets.
+
+        Returns:
+            (None, list_of_answer_sets) on success, (RuntimeError, messages) on parse error.
         """
         clingo_messages = []
 
         def _clingo_logger(code, message):
-            """Clingo logger to catch and format syntax errors"""
             clingo_messages.append((code, message))
 
         clingo_control = Control(
             ["0", "--warn=none", "--opt-mode=optN", "-t", "4"], logger=_clingo_logger
         )
         models = []
-        # breakpoint()
         try:
-            # Encode the program as ASCII before passing it to Clingo
             program_clean = program.encode("ascii", errors="replace").decode("ascii")
-
             logger.debug(f"Cleaned program passed to Clingo:\n{program_clean}")
-
             clingo_control.add("base", [], program_clean)
             clingo_control.ground([("base", [])], context=Context())
-        # Catch syntax errors
         except RuntimeError as e:
             logger.info(
-                f"Clingo parsing/grounding failed with error={e} and #messages={len(clingo_messages)}"
+                f"Clingo parsing/grounding failed with error={e} and "
+                f"#messages={len(clingo_messages)}"
             )
             logger.debug(f"Messages:\n{clingo_messages}")
             return RuntimeError, clingo_messages
@@ -449,15 +223,7 @@ class Pipeline:
         return None, models
 
     def get_reasoning(self, kind, replace):
-        """Extract reasoning trace from a cached response for gpt-oss-120b."""
-        prompt = self.prompt[kind]
-        for k in replace:
-            prompt = prompt.replace(k, replace[k])
-        cached = self.cache.get(kind, {}).get(prompt)
-        if cached is None:
-            return ""
-        if self.engine in ("gpt-oss-120b", "qwen3-32b"):
-            return cached["choices"][0]["message"].get("reasoning") or ""
+        """Returns empty string — reasoning traces not available for local vLLM backend."""
         return ""
 
     def save_mistakes(self, mistake_cols):

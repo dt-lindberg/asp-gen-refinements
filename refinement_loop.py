@@ -74,109 +74,110 @@ def _build_semantic_feedback_multi(answer_sets, max_sets_shown=3):
     )
 
 
-def refinement_loop(replace, puzzle_pipeline, status, answer_sets_or_errors):
-    """Refines an ASP program by looking for syntactical and 'semantic' errors.
+def refinement_loop_batch(replaces, pipeline, statuses, asets_or_errs_list):
+    """Batched refinement loop over all puzzles.
 
-    [Syntactical errors]
-        Triggered when Clingo fails to parse a program, these errors are encoded
-        as RuntimeErrors. We surface the syntax errors with approximate line numbers
-        to the LLM and ask it to fix them.
-    [Semantic errors]
-        Triggered when compilation suceeds, but does not result in a unique answer set.
-        Here too, we ask the LLM to refine the program.
+    Args:
+        replaces: list of replace dicts (one per puzzle).
+        pipeline: Pipeline instance.
+        statuses: list of initial Clingo statuses (None or RuntimeError).
+        asets_or_errs_list: list of initial answer_sets_or_errors.
 
     Returns:
-        replace: updated replace dict
-        status: final clingo status (None if no errors)
-        answer_sets: final answer sets (empty if errors remain)
-        attempt_data: list of MAX_ATTEMPTS tuples (code, answer_sets_count, clingo_time, clingo_errors)
+        list of (replace, status, answer_sets, attempt_data) for each puzzle,
+        where attempt_data is a list of MAX_ATTEMPTS tuples
+        (code, answer_sets_count, clingo_time, clingo_errors).
     """
-    attempt_data = []
-    rules_all = replace["<ASP_CODE>"]
+    n = len(replaces)
+    statuses = list(statuses)
+    asets_or_errs = list(asets_or_errs_list)
+    attempt_data = [[] for _ in range(n)]
+
+    # Puzzles with exactly 1 answer set on entry are already done
+    done = [statuses[i] is None and len(asets_or_errs[i]) == 1 for i in range(n)]
 
     for attempt in range(MAX_ATTEMPTS):
-        # --- syntax errors ---
-        if status is RuntimeError:
-            # Extract the error messages
-            errors = list(map(lambda x: x[1], answer_sets_or_errors))
-            errors_str = "\n".join(errors)
-            logger.info(
-                f"Attempt {attempt + 1}/{MAX_ATTEMPTS}: syntax phase ({len(errors)} errors)"
-            )
+        active = [i for i in range(n) if not done[i]]
+        if not active:
+            logger.info(f"All {n} puzzles done after {attempt} attempts")
+            break
 
-            replace["<ERRORS>"] = errors_str
+        logger.info(
+            f"Refinement attempt {attempt + 1}/{MAX_ATTEMPTS}: {len(active)} active puzzles"
+        )
 
-            clean_code = replace["<ASP_CODE>"]
-            error_lines = _parse_error_lines(errors)
-            replace["<ASP_CODE>"] = _annotate_with_line_numbers(clean_code)
-            replace["<ERROR_CONTEXT>"] = _build_error_context(clean_code, error_lines)
-
-            rules_all = extract_code_blocks(
-                puzzle_pipeline.gen_response("refinement_syntax", replace)
-            )
-            replace["<ASP_CODE>"] = rules_all
-
-        # --- semantic errors ---
-        elif status is None:
-            answer_sets = answer_sets_or_errors
-            n = len(answer_sets)
-
-            # If there is one answer set, break!
-            if n == 1:
-                logger.info(
-                    f"Attempt {attempt + 1}/{MAX_ATTEMPTS}: success (1 answer set)"
-                )
-                break
-
-            # If there are no answer sets, try to make the program less constrained
-            elif n == 0:
-                logger.info(
-                    f"Attempt {attempt + 1}/{MAX_ATTEMPTS}: semantic phase (0 answer sets)"
-                )
-                rules_all = extract_code_blocks(
-                    puzzle_pipeline.gen_response("refinement_semantic_unsat", replace)
-                )
-                replace["<ASP_CODE>"] = rules_all
-
-            # Otherwise, there are more than one answer set, in which case we try to add constraints
+        # Update replace dicts and determine prompt kind for each active puzzle
+        kind_map = {}
+        for i in active:
+            if statuses[i] is RuntimeError:
+                errors = [x[1] for x in asets_or_errs[i]]
+                errors_str = "\n".join(errors)
+                replaces[i]["<ERRORS>"] = errors_str
+                clean_code = replaces[i]["<ASP_CODE>"]
+                error_lines = _parse_error_lines(errors)
+                replaces[i]["<ASP_CODE>"] = _annotate_with_line_numbers(clean_code)
+                replaces[i]["<ERROR_CONTEXT>"] = _build_error_context(clean_code, error_lines)
+                kind_map[i] = "refinement_syntax"
+            elif statuses[i] is None:
+                n_sets = len(asets_or_errs[i])
+                if n_sets == 0:
+                    kind_map[i] = "refinement_semantic_unsat"
+                else:
+                    feedback = _build_semantic_feedback_multi(asets_or_errs[i])
+                    replaces[i]["<SEMANTIC_FEEDBACK>"] = feedback
+                    replaces[i]["<NUM_ANSWER_SETS>"] = str(n_sets)
+                    kind_map[i] = "refinement_semantic_multi"
             else:
-                logger.info(
-                    f"Attempt {attempt + 1}/{MAX_ATTEMPTS}: semantic phase ({n} answer sets)"
-                )
-                feedback = _build_semantic_feedback_multi(answer_sets)
-                replace["<SEMANTIC_FEEDBACK>"] = feedback
-                replace["<NUM_ANSWER_SETS>"] = str(n)
-                rules_all = extract_code_blocks(
-                    puzzle_pipeline.gen_response("refinement_semantic_multi", replace)
-                )
-                replace["<ASP_CODE>"] = rules_all
+                raise RuntimeError(f"Puzzle {i}: unexpected Clingo status {statuses[i]}")
 
-        else:
-            raise RuntimeError(f"Clingo failed with unexpected status: {status}")
+        # Group active puzzles by prompt kind and batch-generate
+        by_kind = {}
+        for i in active:
+            by_kind.setdefault(kind_map[i], []).append(i)
 
-        # Measure compilation time for logging
-        t0 = time.time()
-        status, answer_sets_or_errors = puzzle_pipeline.gen_answer_set(rules_all)
-        clingo_time = round(time.time() - t0, 3)
+        new_rules = {}
+        for kind, indices in by_kind.items():
+            kind_replaces = [replaces[i] for i in indices]
+            responses = pipeline.gen_response_batch(kind, kind_replaces)
+            for idx, resp in zip(indices, responses):
+                new_rules[idx] = extract_code_blocks(resp)
+            logger.debug(f"  Generated {len(indices)} responses for kind={kind}")
 
-        # Store errors for and number of answer sets for logging
-        answer_sets_count = len(answer_sets_or_errors) if status is None else 0
-        if status is not None:
-            clingo_errors = "\n".join(x[1] for x in answer_sets_or_errors)
-        elif answer_sets_count == 0:
-            clingo_errors = "0 answer sets (unsatisfiable)"
-        elif answer_sets_count != 1:
-            clingo_errors = _build_semantic_feedback_multi(answer_sets_or_errors)
-        else:
-            clingo_errors = ""
-        attempt_data.append((rules_all, answer_sets_count, clingo_time, clingo_errors))
+        # Run Clingo for each active puzzle and record results
+        for i in active:
+            rules_all = new_rules[i]
+            replaces[i]["<ASP_CODE>"] = rules_all
 
-    # If status is still an error after all attempts, there are no valid answer sets
-    answer_sets = answer_sets_or_errors if status is None else []
+            t0 = time.time()
+            status, asets_or_err = pipeline.gen_answer_set(rules_all)
+            clingo_time = round(time.time() - t0, 3)
 
-    # Pad to MAX_ATTEMPTS slots for excel formatting
-    # Needed when the LLM finishes before using all attempts
-    while len(attempt_data) < MAX_ATTEMPTS:
-        attempt_data.append(("", 0, 0.0, ""))
+            statuses[i] = status
+            asets_or_errs[i] = asets_or_err
 
-    return replace, status, answer_sets, attempt_data
+            answer_sets_count = len(asets_or_err) if status is None else 0
+            if status is not None:
+                clingo_errors = "\n".join(x[1] for x in asets_or_err)
+            elif answer_sets_count == 0:
+                clingo_errors = "0 answer sets (unsatisfiable)"
+            elif answer_sets_count != 1:
+                clingo_errors = _build_semantic_feedback_multi(asets_or_err)
+            else:
+                clingo_errors = ""
+
+            attempt_data[i].append((rules_all, answer_sets_count, clingo_time, clingo_errors))
+
+            if status is None and len(asets_or_err) == 1:
+                done[i] = True
+
+    n_solved = sum(done)
+    logger.info(f"Refinement complete: {n_solved}/{n} puzzles solved")
+
+    results = []
+    for i in range(n):
+        while len(attempt_data[i]) < MAX_ATTEMPTS:
+            attempt_data[i].append(("", 0, 0.0, ""))
+        answer_sets = asets_or_errs[i] if statuses[i] is None else []
+        results.append((replaces[i], statuses[i], answer_sets, attempt_data[i]))
+
+    return results

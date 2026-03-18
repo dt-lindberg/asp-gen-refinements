@@ -56,7 +56,7 @@ def setup_logging(log_level="info", force=False):
 
     # Block all loggers by default, then allow only specific ones
     logging.getLogger().setLevel(logging.WARNING)
-    for name in ("__main__", "pipeline", "refinement_loop"):
+    for name in ("__main__", "pipeline", "refinement_loop", "vllm_engine"):
         logging.getLogger(name).setLevel(log_level)
 
     # Route warnings to logger as well
