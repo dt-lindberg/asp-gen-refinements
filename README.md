@@ -7,78 +7,63 @@ The original pipeline prompts an LLM to translate natural-language logic puzzles
 
 ## What's new vs. the original
 
-- **Additional model backends**: Google `gemini-3-flash-preview` (via Google AI API) and OpenAI `gpt-oss-120b` (via Groq API), in addition to the original OpenAI models (`gpt-4`, `text-davinci-003`, etc.)
-- **Refinement loop** (Step 8): if Clingo reports a syntax error or the wrong number of answer sets, the LLM is automatically re-prompted up to `MAX_ATTEMPTS` times to fix the program.
-- **Reasoning trace extraction**: for `gpt-oss-120b`, chain-of-thought reasoning steps are extracted and stored alongside results.
+- **Self-hosted LLM backend**: runs `Qwen3-30B-A3B-Instruct` (GGUF, Q4_K_M) locally via vLLM (`vllm_engine.py`). No external API keys required.
+- **Batched inference**: LLM steps 2–6 and the refinement loop are batched across all puzzles, sending them to vLLM in a single `generate` call per step. This maximises GPU throughput compared to sequential per-puzzle calls.
+- **Refinement loop** (Step 8): if Clingo reports a syntax error or the wrong number of answer sets, the LLM is automatically re-prompted up to `MAX_ATTEMPTS` times to fix the program. The refinement loop is also batched — each attempt groups all still-failing puzzles by error type and issues one batch call per type.
 - **Streamlit inspector** (`interface.py`): a visual interface for browsing per-puzzle pipeline outputs and refinement diffs.
 - **`mistakes/` directory**: result `.xlsx` files are now written to a `mistakes/` subdirectory (timestamped filenames) instead of the root directory.
 
 ## Installation
 
+Run the install job on Snellius (installs vLLM with CUDA support, then Clingo and other dependencies):
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install openai google-genai groq clingo pandas xlsxwriter streamlit python-dotenv tqdm
+sbatch install_env.job
 ```
 
-## Preparation
-
-Create a `.env` file in the project root with your API keys:
-
-```
-OPENAI_API_KEY=your_openai_key
-GEMINI_API_KEY=your_gemini_key
-GROQ_API_KEY=your_groq_key
-LOG_LEVEL=info
-```
+The model is loaded from the local HuggingFace cache (`~/.cache/huggingface/hub/`). Download it beforehand if not already present.
 
 ## How to run
 
-Evaluate on puzzles from the dataset. `--engine` selects the LLM backend:
+Submit the main job:
 
 ```bash
-# GPT-4 (OpenAI)
-python main.py --debug --dataset_name test --num 5 --engine gpt-4
+sbatch run.job
+```
 
-# Gemini Flash (Google AI)
-python main.py --debug --dataset_name test --num 5 --engine gemini-3-flash-preview
+Or run interactively (requires a GPU node):
 
-# GPT-OSS 120B (via Groq)
-python main.py --debug --dataset_name test --num 5 --engine gpt-oss-120b
+```bash
+python main.py --dataset_name test --num 50 --engine qwen3-30b-local
 ```
 
 `--dataset_name` is one of `train`, `test`, or `test_HA`. `--num` is the number of puzzles (use `-1` for all 50). Without `--debug`, only failed puzzles are recorded.
 
 Results are saved to `mistakes/mistakes_<timestamp>.xlsx`.
 
-### Other entry points
-
-```bash
-python sudoku.py --engine gpt-4
-python jobs_puzzle.py --engine gpt-4
-```
-
 ## Pipeline steps
 
-The pipeline runs the following steps for each puzzle:
+Steps 2–6 are batched: all puzzles are processed together in a single LLM call per step before moving on. Step 7 (Clingo) is CPU-bound and runs sequentially. Step 8 batches puzzles by refinement type within each attempt.
 
-| Step | Description |
-|------|-------------|
-| 2 | Format constants and categories |
-| 3 | Generate predicates of interest |
-| 4 | Generate search space (facts + choice rules) |
-| 5 | Paraphrase constraints into sentences |
-| 6 | Generate ASP constraint rules |
-| 7 | Compile and solve with Clingo |
-| 8 | Refinement loop (if Clingo fails or gives wrong answer set count) |
+| Step | Description | Mode |
+|------|-------------|------|
+| 2 | Format constants and categories | batched |
+| 3 | Generate predicates of interest | batched |
+| 4 | Generate search space (facts + choice rules) | batched |
+| 5 | Paraphrase constraints into sentences | batched |
+| 6 | Generate ASP constraint rules | batched |
+| 7 | Compile and solve with Clingo | sequential (CPU) |
+| 8 | Refinement loop | batched per attempt |
 
-Prompts for each step live in `prompts/`. API responses are cached per-engine in `caches/` so re-runs don't repeat API calls.
+Prompts for each step live in `prompts/`. LLM responses are cached per-engine in `caches/` (keyed on the full substituted prompt) so re-runs skip already-generated responses.
 
 ## Refinement loop (Step 8)
 
-If Step 7 produces a syntax error or the wrong number of answer sets (0 or >1), the loop re-prompts the LLM with targeted feedback up to `MAX_ATTEMPTS` times:
+If Step 7 produces a syntax error or the wrong number of answer sets (0 or >1), the loop re-prompts the LLM with targeted feedback up to `MAX_ATTEMPTS` times. Puzzles that reach exactly 1 answer set are removed from the active set immediately.
 
-- **Syntax error** (`RuntimeError` from Clingo): uses `prompts/7_refinement_syntax.txt` with the error messages.
+Within each attempt, active puzzles are grouped by their error type and sent as a single batch call per group:
+
+- **Syntax error** (`RuntimeError` from Clingo): uses `prompts/7_refinement_syntax.txt`. The ASP code is annotated with line numbers and the error context is included.
 - **Unsatisfiable** (0 answer sets): uses `prompts/8_refinement_semantic_unsat.txt`.
 - **Under-constrained** (>1 answer sets): uses `prompts/9_refinement_semantic_multi.txt` with a sample of differing atoms across answer sets.
 
@@ -92,7 +77,7 @@ To browse results interactively:
 streamlit run interface.py -- --file mistakes/mistakes_<timestamp>.xlsx
 ```
 
-The inspector shows each puzzle's pipeline steps (inputs/outputs), the initial Clingo result, each refinement attempt with an inline diff, and the final prediction vs. ground truth. It also surfaces reasoning traces when available (gpt-oss-120b).
+The inspector shows each puzzle's pipeline steps (inputs/outputs), the initial Clingo result, each refinement attempt with an inline diff, and the final prediction vs. ground truth.
 
 ## How to read the results
 
@@ -103,7 +88,7 @@ Each row in the output `.xlsx` file corresponds to one puzzle. Key columns:
 - `refinement_0`, `#answer_sets_0`, `clingo_time_0`, `clingo_errors_0` — initial Clingo run
 - `refinement_N`, `#answer_sets_N`, `clingo_time_N`, `clingo_errors_N` — refinement attempt N (1..MAX\_ATTEMPTS)
 - `prediction`, `solution` — final prediction and ground truth
-- `reasoning_*` — chain-of-thought traces (gpt-oss-120b only)
+- `reasoning_*` — chain-of-thought traces (not populated for the local vLLM backend)
 
 The `error_analysis/` directory contains manually annotated Excel files tracking error categories for GPT-3 and GPT-4 on the test set. Errors are highlighted in red; fixes in blue. Error categories:
 

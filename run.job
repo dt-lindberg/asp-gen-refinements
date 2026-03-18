@@ -25,10 +25,8 @@ source .venv/bin/activate
 
 python3 main.py \
     --dataset_name test \
-    --num 2 \
+    --num 10 \
     --engine qwen3-30b-local \
-    --temperature 0.6 \
-    --max_tokens 1500
 
 # Stop monitor and print hardware report
 kill "$MONITOR_PID" 2>/dev/null

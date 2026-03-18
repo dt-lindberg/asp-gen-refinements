@@ -20,7 +20,7 @@ _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
 class VLLMEngine:
-    def __init__(self, max_tokens=1500, temperature=0.6, max_model_len=4400, max_num_seqs=64):
+    def __init__(self, max_tokens=4000, temperature=0.7, max_model_len=4400, max_num_seqs=64):
         from vllm import LLM, SamplingParams
 
         logger.info(f"Loading model from {MODEL_PATH}")
@@ -37,6 +37,9 @@ class VLLMEngine:
         self.sampling_params = SamplingParams(
             temperature=temperature,
             max_tokens=max_tokens,
+            top_p=0.8,
+            top_k=20,
+            min_p=0.01,
         )
 
     def _apply_template(self, messages):

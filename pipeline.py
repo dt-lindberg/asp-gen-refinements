@@ -30,7 +30,7 @@ class Context:
 class Pipeline:
     def __init__(self, args):
         self.engine = "qwen3-30b-local"
-        self.temperature = 0.6
+        self.temperature = 0.7
         self.max_tokens = 1500
         self.path_prompt = {}
         self.prompt = {}

@@ -268,7 +268,7 @@ if __name__ == "__main__":
         type=str,
         help="engine label used for cache file naming",
     )
-    parser.add_argument("--temperature", default=0.6, type=float)
+    parser.add_argument("--temperature", default=0.7, type=float)
     parser.add_argument("--max_tokens", default=1500, type=int)
     parser.add_argument("--debug", default=False, action="store_true")
     args = parser.parse_args()
