@@ -3,6 +3,8 @@ caches/
 archive/*
 *.out
 unsloth_compiled_cache/
+local-llm/outputs/
+outputs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
