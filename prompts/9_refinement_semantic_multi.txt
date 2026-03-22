@@ -7,6 +7,6 @@ In most cases it is the integrity constraints (rules beginning with :-) that mus
 ASP code:
 <ASP_CODE>
 
-Add or tighten integrity constraints to eliminate the ambiguity and produce exactly one answer set. Return the FULL corrected ASP code below.
+Add or tighten integrity constraints to eliminate the ambiguity and produce exactly one answer set. Return the FULL corrected ASP code below. In your response, include a SINGLE ASP code-block with the rules - it will be automatically parsed from your response.
 
 Corrected ASP code:
