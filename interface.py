@@ -56,6 +56,8 @@ STEP_INPUTS = {
 def load_data(path: str) -> pd.DataFrame:
     df = pd.read_excel(path, sheet_name="results", index_col=0)
     df = df.reset_index(drop=True)
+    # Normalise old format: "refinement_N" → "attempt_N"
+    df = df.rename(columns={c: c.replace("refinement_", "attempt_", 1) for c in df.columns if c.startswith("refinement_")})
     return df
 
 
@@ -154,7 +156,7 @@ def show_code_block(code: str, error_lines: set[int] = None):
 
 
 def show_step7(row: pd.Series):
-    rules_0 = cell(row, "refinement_0")
+    rules_0 = cell(row, "attempt_0")
     clingo_time = cell(row, "clingo_time_0")
     clingo_errors = cell(row, "clingo_errors_0")
     n_sets = cell(row, "#answer_sets_0")
@@ -226,7 +228,7 @@ def show_step8(row: pd.Series):
     # Collect per-attempt data; attempt 0 is the original (shown in step 7)
     attempts = [
         (
-            cell(row, f"refinement_{i}"),
+            cell(row, f"attempt_{i}"),
             cell(row, f"#answer_sets_{i}"),
             cell(row, f"clingo_time_{i}"),
             cell(row, f"clingo_errors_{i}"),
@@ -237,7 +239,7 @@ def show_step8(row: pd.Series):
     if not active:
         return
 
-    all_codes = [cell(row, f"refinement_{i}") for i in range(MAX_ATTEMPTS + 1)]
+    all_codes = [cell(row, f"attempt_{i}") for i in range(MAX_ATTEMPTS + 1)]
 
     with st.expander(f"Step 8: Refinement ({len(active)} attempt(s))", expanded=False):
         for i, code, n_sets, clingo_time, clingo_errors in active:
