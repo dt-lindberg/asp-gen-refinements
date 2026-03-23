@@ -1,128 +1,91 @@
-% ------------------------------------------------------------
-%  1.  CONSTANT DECLARATIONS   (UTF‑8 encoded strings)
-% ------------------------------------------------------------
+% Define the constants in each category.
+owners("Anita"; "Elsie"; "Fernando"; "Ginger").
+year(2006; 2007; 2008; 2009).
+breed("bulldog"; "dalmatian"; "irish setter"; "maltese").
 
-% Employees
-employee("Bonita"; "Yvette"; "Tabitha").
+% For each owner and year, exactly one breed is assigned as the winning dog.
+{winning_dog(Owner, Year, Breed) : breed(Breed)} = 1 :- owners(Owner), year(Year).
 
-% Prices (shared between the two sub‑problems)
-price(225; 275; 325).          % for the employee‑wood problem
-price(150; 160; 170; 180).     % for the masseuse‑client problem
+% No two winning dogs can share the same owner, year, or breed ? i.e., each (Owner, Year, Breed) triple is unique.
+% But since we already enforce one breed per (Owner, Year), the only redundancy is across breeds.
+% So we enforce that no breed is used more than once across all (Owner, Year) pairs.
+% This ensures that each breed is used exactly once (since there are 4 owners ? 4 years = 16 assignments, but only 4 breeds ? this is impossible unless we reinterpret).
+% Wait ? this is the core issue: the original constraint is too strong.
 
-% Wood types
-wood_type("ash"; "poplar"; "sandalwood").
+% Let's re-evaluate: the constraint
+% {O1=O2; Y1=Y2; B1=B2}=0 :- winning_dog(O1,Y1,B1), winning_dog(O2,Y2,B2), (O1,Y1,B1)!=(O2,Y2,B2).
+% means: for any two distinct winning_dog facts, at least one of O1=O2, Y1=Y2, B1=B2 must be false.
+% But that's always true if the tuples differ ? so this constraint is actually always satisfied.
+% So this is not the problem.
 
-% Clients
-client("Aimee"; "Ginger"; "Freda"; "Hannah").
+% The real issue is in the interpretation of the "no option used more than once" ? likely meant to say:
+% Each breed is used exactly once across all years and owners? But that's impossible: 4 owners ? 4 years = 16 winning dogs, but only 4 breeds.
 
-% Masseuses
-masseuse("Lynda"; "Nancy"; "Teri"; "Whitney").
+% So the intended meaning must be: each breed is used at most once? But that would require only 4 winning dogs total ? but we have 16 (4 owners ? 4 years).
 
-% ------------------------------------------------------------
-%  2.  RELATION:  match/3   (employee ↔ price ↔ wood_type)
-% ------------------------------------------------------------
+% Therefore, the original constraint {O1=O2; Y1=Y2; B1=B2}=0 is too strong ? it's actually always true, so it's vacuous.
 
-% --- generate the search space --------------------------------
-% For every employee E we choose **exactly one** pair (P,W).
-% The pair must come from the respective domains.
-{ match(E,P,W) : price(P), wood_type(W) } = 1 :- employee(E).
+% But wait ? the constraint is: {O1=O2; Y1=Y2; B1=B2}=0
+% This means: the number of equalities among (O1=O2), (Y1=Y2), (B1=B2) is zero ? i.e., all three are false.
+% So: O1?O2, Y1?Y2, B1?B2.
+% That means: no two winning_dog facts can share any attribute ? owner, year, or breed.
+% That's impossible: 16 winning dogs, but only 4 owners, so by pigeonhole, some owner must repeat.
 
-% --- optional functional constraints ----------------------------
-% (a) each price can be used by at most one employee
-:- price(P), 2 { match(E,P,_) : employee(E) }.
+% So the constraint is **too restrictive** ? it forbids any two dogs from sharing an owner, year, or breed.
 
-% (b) each wood type can be used by at most one employee
-:- wood_type(W), 2 { match(E,_,W) : employee(E) }.
+% But that's clearly not the intended meaning.
 
-% ------------------------------------------------------------
-%  3.  RELATION:  schedule/3   (masseuse ↔ client ↔ price)
-% ------------------------------------------------------------
+% Let's reinterpret the problem: likely, the constraint is meant to say: no breed is used more than once across all (Owner, Year) pairs? But again, 16 assignments, only 4 breeds ? impossible.
 
-% --- generate the search space --------------------------------
-% For every client C we choose **exactly one** pair (M,P).
-{ schedule(M,C,P) : masseuse(M), price(P) } = 1 :- client(C).
+% So the only way to make sense is to assume that the program is meant to assign one dog per owner per year, but the "no option used more than once" applies to something else.
 
-% --- optional functional constraints ----------------------------
-% (a) each price can be used by at most one client
-:- price(P), 2 { schedule(_,C,P) : client(C) }.
+% Looking at the clues:
+% 1. The dalmatian won 1 year after Fernando's canine.
+% 2. Ginger's dog won 1 year before the irish setter.
+% 3. Ginger's canine is the bulldog.
+% 4. The four dogs are: the dog that won in 2006, the dalmatian, the bulldog, and Elsie's dog.
 
-% (b) each masseuse can treat at most one client
-:- masseuse(M), 2 { schedule(M,_,P) : price(P) }.
+% This suggests that only four dogs are being considered ? not 16.
 
-% ------------------------------------------------------------
-%  4.  (Optional)  Example of a classic “queen‑placement’’ rule
-% ------------------------------------------------------------
-% The line below is only illustrative – it shows how a binary
-% predicate with two arguments would be declared in the same program.
-% assign(Ir,Ic) :- row(Ir), col(Ic), not conflict(Ir,Ic).
+% So likely, the problem is not about 4 owners ? 4 years, but rather: each owner won one dog in one year, and we are to assign for each owner a year and a breed, but only one dog per owner.
 
-% ------------------------------------------------------------
-%  5.  Queries / integrity checks (you can comment them out)
-% ------------------------------------------------------------
+% But the original code says: {winning_dog(Owner, Year, Breed) : breed(Breed)} = 1 :- owners(Owner), year(Year).
+% This means: for each owner and each year, exactly one breed is assigned ? so 4 owners ? 4 years = 16 facts.
 
-% Show all generated match/3 atoms
-#show match/3.
-% Show all generated schedule/3 atoms
-#show schedule/3.
+% But clue 4 says: "The four dogs are the dog that won in 2006, the dalmatian, the bulldog and Elsie's dog."
+% This implies there are only four distinct dogs.
 
-% clingo your_program.lp 0   % ← command‑line call, kept as a comment
+% So the model must be: each owner has one winning dog, and there are four owners, so four winning dogs total ? one per owner.
 
-% ----------------------------------------------------------------------
-%  All‑different constraints (no option in any category will ever be used more than once)
-% ----------------------------------------------------------------------
-% each client appears once
-:- schedule(M1,C,_), schedule(M2,C,_), M1 != M2.
+% Therefore, the original model is wrong: it assumes one winning dog per owner per year, but we only need one winning dog per owner, in some year.
 
-% each price appears once
-:- schedule(M1,_,P), schedule(M2,_,P), M1 != M2.
+% So we should instead model: each owner wins exactly one dog (in one year), and each year has one winner? Or not?
 
-% each masseuse appears once (implicit by definition, but kept for symmetry)
-:- schedule(M,_,_), schedule(M2,_,_), M != M2.
+% But clue 1: "The dalmatian won 1 year after Fernando's canine." ? implies that Fernando's dog won in some year, and the dalmatian won in the next year.
 
-% ----------------------------------------------------------------------
-%  Clue 1: Hannah paid more than Teri's client.
-% ----------------------------------------------------------------------
-:- schedule(M_H, "Hannah", P_H),
-   schedule("Teri", C_T, P_T),
-   P_H <= P_T.
+% So we need to assign a year to each owner.
 
-% ----------------------------------------------------------------------
-%  Clue 2: Freda paid 20 dollars more than Lynda's client.
-% ----------------------------------------------------------------------
-:- schedule(M_F, "Freda", P_F),
-   schedule("Lynda", C_L, P_L),
-   P_F != P_L + 20.
+% Let?s revise the model:
 
-% ----------------------------------------------------------------------
-%  Clue 3: Hannah paid 10 dollars less than Nancy's client.
-% ----------------------------------------------------------------------
-:- schedule(M_H, "Hannah", P_H),
-   schedule("Nancy", C_N, P_N),
-   P_H != P_N - 10.
+% - Each owner has exactly one winning dog (in one year), so we have 4 winning dogs total.
+% - Each year can have multiple winners? But clue 2: "Ginger's dog won 1 year before the irish setter" ? so two different years.
 
-% ----------------------------------------------------------------------
-%  Clue 4: Nancy's client, Hannah and Ginger were all different clients.
-% ----------------------------------------------------------------------
-% (the constants "Hannah" and "Ginger" are themselves different, so no extra rule needed)
-:- schedule("Nancy", "Hannah", _).   % Nancy cannot have Hannah as client
-:- schedule("Nancy", "Ginger", _).   % Nancy cannot have Ginger as client
+% So we need to assign to each owner: a year and a breed.
 
-% ----------------------------------------------------------------------
-%  Clue 5: Hannah was either the person who paid $180 or Lynda's client.
-% ----------------------------------------------------------------------
-% at least one of the two conditions must hold
-:- schedule(M_H, "Hannah", P_H),
-   schedule("Lynda", C_L, _),
-   P_H != 180,
-   C_L != "Hannah".
+% But we cannot have two owners winning in the same year? Not necessarily ? but clue 4 says "the dog that won in 2006" ? implying only one dog won in 2006.
 
-% ----------------------------------------------------------------------
-%  Domain facts (optional, for completeness – can be omitted if the solver already knows the domains)
-% ----------------------------------------------------------------------
-price(150). price(160). price(170). price(180).
-client("Aimee"). client("Ginger"). client("Freda"). client("Hannah").
-masseuse("Lynda"). masseuse("Nancy"). masseuse("Teri"). masseuse("Whitney").
+% So likely: each year has exactly one winner.
 
-% ----------------------------------------------------------------------
-%  End of constraints
-% ----------------------------------------------------------------------
+% So: 4 owners, 4 years ? one winner per year, one winner per owner ? a permutation.
+
+% So we should model:
+% - For each owner, exactly one year and one breed.
+% - For each year, exactly one owner and one breed.
+
+% So the correct model is:
+
+% Each owner has exactly one winning dog (in one year), and each year has exactly one winner.
+
+% So we need:
+% - For each owner, exactly one year and one breed: {winning_dog(Owner, Year, Breed) : year(Year), breed(Breed)} = 1 :- owners(Owner).
+% - For each year, exactly one owner and one breed: {winning_dog(Owner, Year, Breed) : owners(Owner),
