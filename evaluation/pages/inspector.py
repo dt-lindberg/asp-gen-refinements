@@ -1,19 +1,17 @@
 """
-Streamlit interface for inspecting LLM→ASP pipeline results.
+Inspector page — interactive per-puzzle view of ASP pipeline results.
 
-Usage:
-    streamlit run interface.py -- --file mistakes.xlsx
-    streamlit run interface.py  (uses mistakes.xlsx by default)
+* Reads the selected mistakes file from st.session_state["mistakes_file"]
+* File selection is handled by app.py sidebar
 """
 
-import argparse
 import difflib
 import re
 
 import pandas as pd
 import streamlit as st
 
-from refinement_loop import MAX_ATTEMPTS
+from evaluation.eval_metrics import load_data, MAX_ATTEMPTS
 
 # ---------------------------------------------------------------------------
 # Config
@@ -47,18 +45,9 @@ STEP_INPUTS = {
     ],
 }
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def load_data(path: str) -> pd.DataFrame:
-    df = pd.read_excel(path, sheet_name="results", index_col=0)
-    df = df.reset_index(drop=True)
-    # Normalise old format: "refinement_N" → "attempt_N"
-    df = df.rename(columns={c: c.replace("refinement_", "attempt_", 1) for c in df.columns if c.startswith("refinement_")})
-    return df
 
 
 def cell(row: pd.Series, col: str) -> str:
@@ -132,13 +121,13 @@ _CODE_DIV = (
 
 
 def show_code_block(code: str, error_lines: set[int] = None):
-    """Render a code block with optional ⚠ markers on error lines."""
+    """Render a code block with optional warning markers on error lines."""
     error_lines = error_lines or set()
     rows = []
     for line_num, line in enumerate(code.splitlines(), start=1):
         escaped = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         warn = (
-            '<span style="color:#ffaa00;user-select:none;">⚠</span>'
+            '<span style="color:#ffaa00;user-select:none;">&#9888;</span>'
             if line_num in error_lines
             else "<span></span>"
         )
@@ -189,24 +178,19 @@ def show_inline_diff(before: str, after: str, error_lines: set[int] = None):
         content = entry[2:]
         if tag == "? ":
             continue
-        escaped = (
-            content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        )
+        escaped = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         if tag == "  ":
             bg, marker = "transparent", " "
             line_num += 1
         elif tag == "- ":
-            bg, marker = "rgba(255,80,80,0.3)", "-"  # rgba(red, green, blue, opacity)
+            bg, marker = "rgba(255,80,80,0.3)", "-"
             line_num += 1
         elif tag == "+ ":
-            bg, marker = (
-                "rgba(80,200,80,0.3)",
-                "+",
-            )  # increase opacity to make colours more vivid
+            bg, marker = "rgba(80,200,80,0.3)", "+"
         else:
             continue
         warn = (
-            '<span style="color:#ffaa00;user-select:none;">⚠</span>'
+            '<span style="color:#ffaa00;user-select:none;">&#9888;</span>'
             if line_num in error_lines
             else "<span></span>"
         )
@@ -225,7 +209,6 @@ def show_inline_diff(before: str, after: str, error_lines: set[int] = None):
 
 
 def show_step8(row: pd.Series):
-    # Collect per-attempt data; attempt 0 is the original (shown in step 7)
     attempts = [
         (
             cell(row, f"attempt_{i}"),
@@ -285,72 +268,51 @@ def show_result(row: pd.Series):
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Page entry point
 # ---------------------------------------------------------------------------
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--file", default="mistakes.xlsx", help="Path to the Excel results file"
-    )
-    args, _ = parser.parse_known_args()
-    return args
-
-
 def main():
-    st.set_page_config(page_title="ASP Pipeline Inspector", layout="wide")
-    st.title("ASP Pipeline Inspector")
+    global _puzzle_index, _text_block_counter
 
-    args = parse_args()
-    file_path = args.file
+    file_path = st.session_state.get("mistakes_file")
+    if not file_path:
+        st.info("Select a mistakes file from the sidebar to get started.")
+        return
 
     try:
         df = load_data(file_path)
-    except FileNotFoundError:
-        st.error(f"File not found: {file_path}")
-        st.stop()
     except Exception as e:
         st.error(f"Failed to load {file_path}: {e}")
-        st.stop()
+        return
 
     n_correct = sum(1 for _, row in df.iterrows() if is_correct(row))
-    st.caption(
-        f"Loaded {len(df)} puzzles — {n_correct} correct, {len(df) - n_correct} incorrect"
-    )
+    st.caption(f"Loaded {len(df)} puzzles — {n_correct} correct, {len(df) - n_correct} incorrect")
 
-    # Sidebar: puzzle list
     with st.sidebar:
+        st.divider()
         st.header("Puzzles")
         labels = [puzzle_label(i, row) for i, row in df.iterrows()]
         selected = st.radio(
             "Select puzzle", options=range(len(df)), format_func=lambda i: labels[i]
         )
 
-    global _puzzle_index
     _puzzle_index = selected
+    _text_block_counter = 0
     row = df.iloc[selected]
 
     st.subheader(f"Puzzle {selected + 1}")
 
-    # Story
     with st.expander("Story & Constraints", expanded=False):
         show_text_block("story", cell(row, "story"), height=150)
         show_text_block("constraints (original)", cell(row, "constraints"), height=120)
 
-    # Steps 2–6
     for step_col in STEP_LABELS:
         show_step(step_col, row)
 
-    # Step 7
     show_step7(row)
-
-    # Step 8
     show_step8(row)
-
-    # Result
     show_result(row)
 
 
-if __name__ == "__main__":
-    main()
+main()
