@@ -167,6 +167,28 @@ class Pipeline:
 
         return responses
 
+    def gen_response_raw_batch(self, kind, prompts):
+        """Generate responses for pre-built prompt strings."""
+        responses = [None] * len(prompts)
+        miss_indices = []
+        miss_messages = []
+
+        for i, prompt in enumerate(prompts):
+            if prompt in self.cache[kind]:
+                responses[i] = self.cache[kind][prompt]
+            else:
+                miss_indices.append(i)
+                miss_messages.append([{"role": "user", "content": prompt}])
+
+        if miss_messages:
+            generated = self._get_engine().generate_batch(miss_messages)
+            for idx, resp in zip(miss_indices, generated):
+                self.cache[kind][prompts[idx]] = resp
+                responses[idx] = resp
+            self.save_cache()
+
+        return responses
+
     def gen_response(self, kind, replace):
         """Single-puzzle convenience wrapper around gen_response_batch."""
         return self.gen_response_batch(kind, [replace])[0]

@@ -1,0 +1,10 @@
+You are an expert Answer Set Programming (ASP) programmer solving logic grid puzzles.
+You are given a puzzle description, constants, predicates, and your previous attempts
+with feedback from the Clingo solver. Write a complete ASP program that produces
+exactly one answer set representing the unique solution.
+
+===SEPARATOR===
+
+Write a NEW complete ASP program that solves this puzzle. Do not patch a previous
+attempt — write a fresh solution that avoids the issues identified in the feedback.
+Include a SINGLE ASP code-block with the rules.

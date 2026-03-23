@@ -8,7 +8,7 @@ from pipeline import Pipeline
 from logger import setup_logging, get_logger
 from utils import extract_code_blocks
 from refinement_loop import (
-    refinement_loop_batch,
+    multi_attempt_batch,
     MAX_ATTEMPTS,
     _build_semantic_feedback_multi,
 )
@@ -29,9 +29,7 @@ def main(args):
         "search_space": "prompts/4_gen_search_space.txt",
         "paraphrasing": "prompts/5_paraphrasing.txt",
         "constraints": "prompts/6_gen_constraints.txt",
-        "refinement_syntax": "prompts/7_refinement_syntax.txt",
-        "refinement_semantic_unsat": "prompts/8_refinement_semantic_unsat.txt",
-        "refinement_semantic_multi": "prompts/9_refinement_semantic_multi.txt",
+        "reattempt": "prompts/8_reattempt.txt",
     }
     prefix = "vllm_" + args.engine + "_"
     puzzle_pipeline.path_cache = {
@@ -168,7 +166,7 @@ def main(args):
     # Step 8: batched refinement loop
     logger.info(f"Step 8: Starting batched refinement loop for {num} puzzles...")
     try:
-        final_results = refinement_loop_batch(replaces, puzzle_pipeline, statuses, asets_or_errs_list)
+        final_results = multi_attempt_batch(puzzle_data, puzzle_pipeline, statuses, asets_or_errs_list)
     except Exception as e:
         logger.error(f"Refinement loop failed: {e}", exc_info=True)
         logger.info("Saving partial results before exiting...")
@@ -241,7 +239,7 @@ def main(args):
             field
             for i in range(MAX_ATTEMPTS + 1)
             for field in (
-                f"refinement_{i}",
+                f"attempt_{i}",
                 f"#answer_sets_{i}",
                 f"clingo_time_{i}",
                 f"clingo_errors_{i}",

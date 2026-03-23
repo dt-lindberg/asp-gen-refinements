@@ -8,8 +8,8 @@ from utils import extract_code_blocks
 setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
 logger = get_logger(__name__)
 
-# The maximum number of refinement iterations
-MAX_ATTEMPTS = 6
+# The maximum number of reattempt iterations (attempt 0 is step 7; attempts 1..MAX_ATTEMPTS are here)
+MAX_ATTEMPTS = 4
 # If there are more answer sets than this, we make no attempt to show the model
 SEVERELY_UNDERCONSTRAINED_THRESHOLD = 1000
 MAX_VARIABLE_ATOMS = 30
@@ -74,27 +74,78 @@ def _build_semantic_feedback_multi(answer_sets, max_sets_shown=3):
     )
 
 
-def refinement_loop_batch(replaces, pipeline, statuses, asets_or_errs_list):
-    """Batched refinement loop over all puzzles.
+def _build_feedback(status, asets_or_errs):
+    """Format Clingo output into a feedback string for one attempt."""
+    if status is RuntimeError:
+        return "\n".join(x[1] for x in asets_or_errs)
+    n_sets = len(asets_or_errs)
+    if n_sets == 0:
+        return "0 answer sets (unsatisfiable)"
+    if n_sets != 1:
+        return _build_semantic_feedback_multi(asets_or_errs)
+    return ""
+
+
+def _build_attempt_prompt(puzzle_data_i, history, system_prompt, instruction):
+    """Construct the full prompt for one puzzle.
 
     Args:
-        replaces: list of replace dicts (one per puzzle).
+        puzzle_data_i: dict with story, constraints_paraphrased, constants_formatted, predicates.
+        history: list of (code, feedback_str) pairs, starting with attempt 0.
+        system_prompt: Part A of the reattempt template.
+        instruction: Part B of the reattempt template.
+
+    Returns:
+        Full prompt string.
+    """
+    parts = [system_prompt, ""]
+    parts.append("Puzzle description:\n" + puzzle_data_i["story"])
+    parts.append("\nConstraints:\n" + puzzle_data_i["constraints_paraphrased"])
+    parts.append("\nConstants:\n" + puzzle_data_i["constants_formatted"])
+    parts.append("\nPredicates:\n" + puzzle_data_i["predicates"])
+    parts.append("")
+
+    for idx, (code, feedback) in enumerate(history):
+        n = idx + 1
+        parts.append(f"<attempt_{n}>")
+        parts.append("```asp")
+        parts.append(code)
+        parts.append("```")
+        parts.append("")
+        parts.append("<feedback>")
+        parts.append(feedback)
+        parts.append("</feedback>")
+        parts.append(f"</attempt_{n}>")
+        parts.append("")
+
+    parts.append(instruction)
+    return "\n".join(parts)
+
+
+def multi_attempt_batch(puzzle_data, pipeline, statuses, asets_or_errs_list):
+    """Multi-attempt one-shot loop over all puzzles.
+
+    Args:
+        puzzle_data: list of puzzle dicts (one per puzzle).
         pipeline: Pipeline instance.
         statuses: list of initial Clingo statuses (None or RuntimeError).
         asets_or_errs_list: list of initial answer_sets_or_errors.
 
     Returns:
-        list of (replace, status, answer_sets, attempt_data) for each puzzle,
+        list of (None, status, answer_sets, attempt_data) for each puzzle,
         where attempt_data is a list of MAX_ATTEMPTS tuples
         (code, answer_sets_count, clingo_time, clingo_errors).
     """
-    n = len(replaces)
+    n = len(puzzle_data)
     statuses = list(statuses)
     asets_or_errs = list(asets_or_errs_list)
     attempt_data = [[] for _ in range(n)]
 
-    # Puzzles with exactly 1 answer set on entry are already done
     done = [statuses[i] is None and len(asets_or_errs[i]) == 1 for i in range(n)]
+
+    system_prompt, instruction = pipeline.prompt["reattempt"].split("===SEPARATOR===")
+    system_prompt = system_prompt.strip()
+    instruction = instruction.strip()
 
     for attempt in range(MAX_ATTEMPTS):
         active = [i for i in range(n) if not done[i]]
@@ -103,50 +154,22 @@ def refinement_loop_batch(replaces, pipeline, statuses, asets_or_errs_list):
             break
 
         logger.info(
-            f"Refinement attempt {attempt + 1}/{MAX_ATTEMPTS}: {len(active)} active puzzles"
+            f"Multi-attempt {attempt + 1}/{MAX_ATTEMPTS}: {len(active)} active puzzles"
         )
 
-        # Update replace dicts and determine prompt kind for each active puzzle
-        kind_map = {}
+        # Build full prompts for all active puzzles
+        prompts = []
         for i in active:
-            if statuses[i] is RuntimeError:
-                errors = [x[1] for x in asets_or_errs[i]]
-                errors_str = "\n".join(errors)
-                replaces[i]["<ERRORS>"] = errors_str
-                clean_code = replaces[i]["<ASP_CODE>"]
-                error_lines = _parse_error_lines(errors)
-                replaces[i]["<ASP_CODE>"] = _annotate_with_line_numbers(clean_code)
-                replaces[i]["<ERROR_CONTEXT>"] = _build_error_context(clean_code, error_lines)
-                kind_map[i] = "refinement_syntax"
-            elif statuses[i] is None:
-                n_sets = len(asets_or_errs[i])
-                if n_sets == 0:
-                    kind_map[i] = "refinement_semantic_unsat"
-                else:
-                    feedback = _build_semantic_feedback_multi(asets_or_errs[i])
-                    replaces[i]["<SEMANTIC_FEEDBACK>"] = feedback
-                    replaces[i]["<NUM_ANSWER_SETS>"] = str(n_sets)
-                    kind_map[i] = "refinement_semantic_multi"
-            else:
-                raise RuntimeError(f"Puzzle {i}: unexpected Clingo status {statuses[i]}")
+            history = [(puzzle_data[i]["rules_all"], puzzle_data[i]["clingo_errors_0"])]
+            for code, _, _, clingo_errors in attempt_data[i]:
+                history.append((code, clingo_errors))
+            prompts.append(_build_attempt_prompt(puzzle_data[i], history, system_prompt, instruction))
 
-        # Group active puzzles by prompt kind and batch-generate
-        by_kind = {}
-        for i in active:
-            by_kind.setdefault(kind_map[i], []).append(i)
-
-        new_rules = {}
-        for kind, indices in by_kind.items():
-            kind_replaces = [replaces[i] for i in indices]
-            responses = pipeline.gen_response_batch(kind, kind_replaces)
-            for idx, resp in zip(indices, responses):
-                new_rules[idx] = extract_code_blocks(resp)
-            logger.debug(f"  Generated {len(indices)} responses for kind={kind}")
+        responses = pipeline.gen_response_raw_batch("reattempt", prompts)
 
         # Run Clingo for each active puzzle and record results
-        for i in active:
-            rules_all = new_rules[i]
-            replaces[i]["<ASP_CODE>"] = rules_all
+        for i, resp in zip(active, responses):
+            rules_all = extract_code_blocks(resp)
 
             t0 = time.time()
             status, asets_or_err = pipeline.gen_answer_set(rules_all)
@@ -156,14 +179,7 @@ def refinement_loop_batch(replaces, pipeline, statuses, asets_or_errs_list):
             asets_or_errs[i] = asets_or_err
 
             answer_sets_count = len(asets_or_err) if status is None else 0
-            if status is not None:
-                clingo_errors = "\n".join(x[1] for x in asets_or_err)
-            elif answer_sets_count == 0:
-                clingo_errors = "0 answer sets (unsatisfiable)"
-            elif answer_sets_count != 1:
-                clingo_errors = _build_semantic_feedback_multi(asets_or_err)
-            else:
-                clingo_errors = ""
+            clingo_errors = _build_feedback(status, asets_or_err)
 
             attempt_data[i].append((rules_all, answer_sets_count, clingo_time, clingo_errors))
 
@@ -171,13 +187,13 @@ def refinement_loop_batch(replaces, pipeline, statuses, asets_or_errs_list):
                 done[i] = True
 
     n_solved = sum(done)
-    logger.info(f"Refinement complete: {n_solved}/{n} puzzles solved")
+    logger.info(f"Multi-attempt complete: {n_solved}/{n} puzzles solved")
 
     results = []
     for i in range(n):
         while len(attempt_data[i]) < MAX_ATTEMPTS:
             attempt_data[i].append(("", 0, 0.0, ""))
         answer_sets = asets_or_errs[i] if statuses[i] is None else []
-        results.append((replaces[i], statuses[i], answer_sets, attempt_data[i]))
+        results.append((None, statuses[i], answer_sets, attempt_data[i]))
 
     return results
