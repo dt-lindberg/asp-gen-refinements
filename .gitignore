@@ -3,6 +3,7 @@ archive/*
 unsloth_compiled_cache/
 local-llm/outputs/
 outputs/
+*.xlsx#
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
