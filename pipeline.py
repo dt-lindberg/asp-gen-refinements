@@ -15,7 +15,9 @@ _CONSTRAINTS_SYSTEM = (
     "You are a semantic parser to turn clues in a problem into logical rules "
     "using only provided constants and predicates."
 )
-_CONSTRAINTS_ASSISTANT_ACK = "Ok. I will only write constraints under the provided forms."
+_CONSTRAINTS_ASSISTANT_ACK = (
+    "Ok. I will only write constraints under the provided forms."
+)
 
 
 # clingo context used to define python functions in clingo
@@ -208,15 +210,35 @@ class Pipeline:
         def _clingo_logger(code, message):
             clingo_messages.append((code, message))
 
+        # Cap at 1001: enough to trigger the SEVERELY_UNDERCONSTRAINED_THRESHOLD=1000
+        # path in refinement_loop.py, while preventing multi-billion model enumeration
+        # that causes indefinite hangs on under-constrained programs.
+        MAX_MODELS = 1001
+        SOLVE_TIMEOUT = 30.0  # wall-clock seconds
+        # C++-level CPU time limit — interrupts both ground() and solve(), raising
+        # RuntimeError. Guards against infinite recursive grounding (e.g. arithmetic
+        # rules that derive out-of-domain atoms and recurse without bound).
+        CLINGO_CPU_LIMIT = 30  # seconds
+
         clingo_control = Control(
-            ["0", "--warn=none", "--opt-mode=optN", "-t", "4"], logger=_clingo_logger
+            [
+                str(MAX_MODELS),
+                "--warn=none",
+                "--opt-mode=optN",
+                "-t",
+                "4",
+                f"--time-limit={CLINGO_CPU_LIMIT}",
+            ],
+            logger=_clingo_logger,
         )
         models = []
         try:
             program_clean = program.encode("ascii", errors="replace").decode("ascii")
             logger.debug(f"Cleaned program passed to Clingo:\n{program_clean}")
             clingo_control.add("base", [], program_clean)
+            logger.debug("Clingo: starting ground()")
             clingo_control.ground([("base", [])], context=Context())
+            logger.debug("Clingo: ground() complete, starting solve()")
         except RuntimeError as e:
             logger.info(
                 f"Clingo parsing/grounding failed with error={e} and "
@@ -229,17 +251,23 @@ class Pipeline:
             return RuntimeError, []
 
         if opt:
-            clingo_control.solve(
-                on_model=lambda model: (
-                    models.append(model.symbols(atoms=True))
-                    if model.optimality_proven
-                    else None
-                )
+            on_model_cb = lambda model: (
+                models.append(model.symbols(atoms=True))
+                if model.optimality_proven
+                else None
             )
         else:
-            clingo_control.solve(
-                on_model=lambda model: models.append(model.symbols(atoms=True))
-            )
+            on_model_cb = lambda model: models.append(model.symbols(atoms=True))
+
+        with clingo_control.solve(on_model=on_model_cb, async_=True) as handle:
+            finished = handle.wait(SOLVE_TIMEOUT)
+            if not finished:
+                handle.cancel()
+                handle.wait()
+                logger.warning(
+                    f"Clingo solve timed out after {SOLVE_TIMEOUT}s "
+                    f"({len(models)} models found so far), cancelling"
+                )
 
         models = [[str(atom) for atom in model] for model in models]
         return None, models
