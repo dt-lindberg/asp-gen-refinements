@@ -9,12 +9,16 @@ from logger import setup_logging, get_logger
 setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
 logger = get_logger(__name__)
 
+# Path to model on Snellius
 MODEL_PATH = (
     "/home/dlindberg/.cache/huggingface/hub/"
     "models--unsloth--Qwen3-30B-A3B-Instruct-2507-GGUF/snapshots/"
     "eea7b2be5805a5f151f8847ede8e5f9a9284bf77/"
     "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf"
 )
+
+# Used to control randomness, passed to vLLM and can be re-used
+SEED = 132
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 
@@ -46,6 +50,7 @@ class VLLMEngine:
             max_num_seqs=max_num_seqs,
             max_num_batched_tokens=max_num_batched_tokens,
             gpu_memory_utilization=0.93,
+            seed=SEED,
         )
         logger.info(f"Model loaded in {time.perf_counter() - t0:.2f}s")
 
