@@ -209,6 +209,11 @@ def show_inline_diff(before: str, after: str, error_lines: set[int] = None):
 
 
 def show_step8(row: pd.Series):
+    # Detect max attempt from the row's own keys rather than trusting MAX_ATTEMPTS
+    max_attempt = max(
+        (int(k.split("_")[1]) for k in row.index if re.match(r"^attempt_\d+$", str(k))),
+        default=0,
+    )
     attempts = [
         (
             cell(row, f"attempt_{i}"),
@@ -216,13 +221,13 @@ def show_step8(row: pd.Series):
             cell(row, f"clingo_time_{i}"),
             cell(row, f"clingo_errors_{i}"),
         )
-        for i in range(1, MAX_ATTEMPTS + 1)
+        for i in range(1, max_attempt + 1)
     ]
     active = [(i, *data) for i, data in enumerate(attempts, 1) if any(data)]
     if not active:
         return
 
-    all_codes = [cell(row, f"attempt_{i}") for i in range(MAX_ATTEMPTS + 1)]
+    all_codes = [cell(row, f"attempt_{i}") for i in range(max_attempt + 1)]
 
     with st.expander(f"Step 8: Refinement ({len(active)} attempt(s))", expanded=False):
         for i, code, n_sets, clingo_time, clingo_errors in active:
