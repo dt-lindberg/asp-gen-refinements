@@ -9,7 +9,7 @@ setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
 logger = get_logger(__name__)
 
 # The maximum number of reattempt iterations (attempt 0 is step 7; attempts 1..MAX_ATTEMPTS are here)
-MAX_ATTEMPTS = 4
+MAX_ATTEMPTS = 6
 # If there are more answer sets than this, we make no attempt to show the model
 SEVERELY_UNDERCONSTRAINED_THRESHOLD = 1000
 MAX_VARIABLE_ATOMS = 30
