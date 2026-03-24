@@ -2,7 +2,7 @@
 
 #SBATCH --job-name=ASPGen
 #SBATCH --partition=gpu_a100
-#SBATCH --time=04:00:00
+#SBATCH --time=01:00:00
 #SBATCH --gpus=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=18
@@ -26,7 +26,7 @@ source .venv/bin/activate
 python3 main.py \
     --debug \
     --dataset_name train \
-    --num 50 \
+    --num 15 \
     --engine qwen3-30b-local \
 
 # Stop monitor and print hardware report
