@@ -11,6 +11,7 @@ import streamlit as st
 
 from evaluation.eval_metrics import (
     MAX_ATTEMPTS,
+    actual_max_attempt,
     attempt_distribution,
     avg_program_lengths,
     count_correct,
@@ -72,8 +73,9 @@ def main():
 
     dist = attempt_distribution(df)
     if dist:
+        max_idx = actual_max_attempt(df)
         attempt_df = pd.DataFrame(
-            [{"Attempt": f"Attempt {i}", "Count": dist.get(i, 0)} for i in range(MAX_ATTEMPTS + 1)]
+            [{"Attempt": f"Attempt {i}", "Count": dist.get(i, 0)} for i in range(max_idx + 1)]
         )
         chart = (
             alt.Chart(attempt_df)
@@ -96,7 +98,7 @@ def main():
     st.subheader("Error distribution")
     st.caption("Count of each error type across attempts. Use the filter to restrict to specific attempt indices.")
 
-    all_attempt_indices = list(range(MAX_ATTEMPTS + 1))
+    all_attempt_indices = list(range(actual_max_attempt(df) + 1))
     selected_attempts = st.multiselect(
         "Filter by attempt index",
         options=all_attempt_indices,
@@ -145,7 +147,7 @@ def main():
             "lower": round(lengths[i]["mean"] - lengths[i]["std"], 1),
             "upper": round(lengths[i]["mean"] + lengths[i]["std"], 1),
         }
-        for i in range(MAX_ATTEMPTS + 1)
+        for i in range(actual_max_attempt(df) + 1)
         if lengths[i] is not None
     ]
 

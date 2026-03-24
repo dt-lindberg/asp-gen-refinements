@@ -109,18 +109,35 @@ def detect_hardcoded(df: pd.DataFrame) -> dict[int, list[str]]:
     return results
 
 
+def actual_max_attempt(df: pd.DataFrame) -> int:
+    """
+    Return the highest attempt index present as a non-empty column in the DataFrame.
+
+    * Scans attempt_N columns rather than trusting MAX_ATTEMPTS, so the stats page
+      adapts automatically when runs use a different number of refinement attempts
+    """
+    indices = [
+        int(c.split("_")[1])
+        for c in df.columns
+        if re.match(r"^attempt_\d+$", c)
+    ]
+    return max(indices) if indices else 0
+
+
 def attempt_distribution(df: pd.DataFrame) -> Counter:
     """
     For each correct puzzle, find the attempt index that first yielded exactly one answer set.
 
     * Returns Counter mapping attempt index → number of puzzles solved at that attempt
     * Only includes puzzles that were eventually solved
+    * Uses actual attempt columns in df, not the hardcoded MAX_ATTEMPTS constant
     """
+    max_idx = actual_max_attempt(df)
     dist: Counter = Counter()
     for _, row in df.iterrows():
         if not _is_correct(row):
             continue
-        for i in range(MAX_ATTEMPTS + 1):
+        for i in range(max_idx + 1):
             n_str = _cell(row, f"#answer_sets_{i}")
             try:
                 if int(float(n_str)) == 1:
@@ -137,11 +154,11 @@ def error_distribution(
     """
     Count error types across attempts, optionally restricted to specific attempt indices.
 
-    * attempt_filter: list of attempt indices to include; None means all 0..MAX_ATTEMPTS
+    * attempt_filter: list of attempt indices to include; None means all present in df
     * Categories: 'syntax', 'semantic_unsat', 'semantic_multi', 'correct'
     * Returns Counter
     """
-    indices = attempt_filter if attempt_filter is not None else list(range(MAX_ATTEMPTS + 1))
+    indices = attempt_filter if attempt_filter is not None else list(range(actual_max_attempt(df) + 1))
     dist: Counter = Counter()
 
     for _, row in df.iterrows():
@@ -180,10 +197,11 @@ def avg_program_lengths(df: pd.DataFrame) -> dict[int, dict[str, float] | None]:
     """
     import math
 
-    lengths: dict[int, list[int]] = {i: [] for i in range(MAX_ATTEMPTS + 1)}
+    max_idx = actual_max_attempt(df)
+    lengths: dict[int, list[int]] = {i: [] for i in range(max_idx + 1)}
 
     for _, row in df.iterrows():
-        for i in range(MAX_ATTEMPTS + 1):
+        for i in range(max_idx + 1):
             code = _cell(row, f"attempt_{i}")
             if code:
                 lengths[i].append(len(code))
