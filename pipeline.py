@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 import pandas as pd
 
 from time import strftime
@@ -190,15 +191,10 @@ class Pipeline:
         # path in refinement_loop.py, while preventing multi-billion model enumeration
         # that causes indefinite hangs on under-constrained programs.
         MAX_MODELS = 1001
-        SOLVE_TIMEOUT = 30.0  # wall-clock seconds
-        # C++-level CPU time limit — interrupts both ground() and solve(), raising
-        # RuntimeError. Guards against infinite recursive grounding (e.g. arithmetic
-        # rules that derive out-of-domain atoms and recurse without bound).
-        CLINGO_CPU_LIMIT = 30  # seconds
+        TIMEOUT = 30.0  # wall-clock seconds, shared for ground() and solve()
 
         clingo_control = Control(
-            [str(MAX_MODELS), "--warn=none", "--opt-mode=optN", "-t", "4",
-             f"--time-limit={CLINGO_CPU_LIMIT}"],
+            [str(MAX_MODELS), "--warn=none", "--opt-mode=optN", "-t", "4"],
             logger=_clingo_logger,
         )
         models = []
@@ -206,12 +202,9 @@ class Pipeline:
             program_clean = program.encode("ascii", errors="replace").decode("ascii")
             logger.debug(f"Cleaned program passed to Clingo:\n{program_clean}")
             clingo_control.add("base", [], program_clean)
-            logger.debug("Clingo: starting ground()")
-            clingo_control.ground([("base", [])], context=Context())
-            logger.debug("Clingo: ground() complete, starting solve()")
         except RuntimeError as e:
             logger.info(
-                f"Clingo parsing/grounding failed with error={e} and "
+                f"Clingo parsing failed with error={e} and "
                 f"#messages={len(clingo_messages)}"
             )
             logger.debug(f"Messages:\n{clingo_messages}")
@@ -219,6 +212,41 @@ class Pipeline:
         except Exception as e:
             logger.error(f"Clingo failed with error={e}")
             return RuntimeError, []
+
+        # ground() can loop forever on LLM-generated programs that use recursive
+        # arithmetic rules deriving out-of-domain atoms (e.g. month = month - 2
+        # recursively). Run it in a daemon thread so we can time out and move on.
+        logger.debug("Clingo: starting ground()")
+        ground_exc = [None]
+        ground_done = threading.Event()
+
+        def _do_ground():
+            try:
+                clingo_control.ground([("base", [])], context=Context())
+            except Exception as e:
+                ground_exc[0] = e
+            finally:
+                ground_done.set()
+
+        threading.Thread(target=_do_ground, daemon=True).start()
+
+        if not ground_done.wait(TIMEOUT):
+            logger.warning(f"Clingo ground() timed out after {TIMEOUT}s, skipping puzzle")
+            return RuntimeError, []
+
+        if ground_exc[0] is not None:
+            e = ground_exc[0]
+            if isinstance(e, RuntimeError):
+                logger.info(
+                    f"Clingo grounding failed with error={e} and "
+                    f"#messages={len(clingo_messages)}"
+                )
+                logger.debug(f"Messages:\n{clingo_messages}")
+                return RuntimeError, clingo_messages
+            logger.error(f"Clingo failed with error={e}")
+            return RuntimeError, []
+
+        logger.debug("Clingo: ground() complete, starting solve()")
 
         if opt:
             on_model_cb = lambda model: (
@@ -230,12 +258,12 @@ class Pipeline:
             on_model_cb = lambda model: models.append(model.symbols(atoms=True))
 
         with clingo_control.solve(on_model=on_model_cb, async_=True) as handle:
-            finished = handle.wait(SOLVE_TIMEOUT)
+            finished = handle.wait(TIMEOUT)
             if not finished:
                 handle.cancel()
                 handle.wait()
                 logger.warning(
-                    f"Clingo solve timed out after {SOLVE_TIMEOUT}s "
+                    f"Clingo solve timed out after {TIMEOUT}s "
                     f"({len(models)} models found so far), cancelling"
                 )
 
