@@ -27,7 +27,7 @@ class VLLMEngine:
     def __init__(
         self,
         max_tokens=6000,
-        max_model_len=9800,
+        max_model_len=16000,
         max_num_batched_tokens=8192,
         max_num_seqs=25,
         temperature=0.7,
