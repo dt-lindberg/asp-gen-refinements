@@ -23,7 +23,20 @@ from config import (
 setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
 logger = get_logger(__name__)
 
-_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+def _split_thinking(text):
+    """Split raw vLLM output into (thinking, response).
+
+    * thinking: content inside the first <think>...</think> block, or "" if absent
+    * response: remaining text after stripping the thinking block
+    """
+    thinking_re = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+    match = thinking_re.search(text)
+    if match:
+        thinking = match.group(1).strip()
+        response = thinking_re.sub("", text).strip()
+        return thinking, response
+    return "", text.strip()
 
 
 class VLLMEngine:
@@ -89,7 +102,7 @@ class VLLMEngine:
             messages_list: list of conversations, each a list of role/content dicts.
 
         Returns:
-            list of response strings (thinking tokens stripped).
+            list of (thinking, response) tuples where thinking is "" when absent.
         """
         formatted = [self._apply_template(msgs) for msgs in messages_list]
 
@@ -98,9 +111,11 @@ class VLLMEngine:
         outputs = self.llm.generate(formatted, self.sampling_params)
         t_gen = time.perf_counter() - t0
 
+        # Counts all response tokens; both thinking and output
         n_tokens = sum(len(o.outputs[0].token_ids) for o in outputs)
         logger.info(
             f"Generated {n_tokens} tokens in {t_gen:.2f}s ({n_tokens / t_gen:.2f} tok/s)"
         )
 
-        return [_THINK_RE.sub("", o.outputs[0].text).strip() for o in outputs]
+        # Each response becomes tuple of (thinking, output)
+        return [_split_thinking(o.outputs[0].text) for o in outputs]

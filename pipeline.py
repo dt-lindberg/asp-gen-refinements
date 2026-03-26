@@ -77,6 +77,11 @@ class Pipeline:
             with open(self.path_cache[kind], "w") as f:
                 json.dump(self.cache[kind], f)
 
+    @staticmethod
+    def _cache_response(entry):
+        """Extract response text from a cache entry (supports old string format and new dict format)."""
+        return entry["response"] if isinstance(entry, dict) else entry
+
     def gen_response_batch(self, kind, replaces):
         """Generate responses for a batch of puzzles.
 
@@ -100,15 +105,15 @@ class Pipeline:
 
         for i, prompt in enumerate(prompts):
             if prompt in self.cache[kind]:
-                responses[i] = self.cache[kind][prompt]
+                responses[i] = self._cache_response(self.cache[kind][prompt])
             else:
                 miss_indices.append(i)
                 miss_messages.append([{"role": "user", "content": prompt}])
 
         if miss_messages:
             generated = self._get_engine().generate_batch(miss_messages)
-            for idx, resp in zip(miss_indices, generated):
-                self.cache[kind][prompts[idx]] = resp
+            for idx, (thinking, resp) in zip(miss_indices, generated):
+                self.cache[kind][prompts[idx]] = {"response": resp, "thinking": thinking}
                 responses[idx] = resp
             self.save_cache()
 
@@ -157,15 +162,15 @@ class Pipeline:
 
         for i, prompt in enumerate(prompts):
             if prompt in self.cache[kind]:
-                responses[i] = self.cache[kind][prompt]
+                responses[i] = self._cache_response(self.cache[kind][prompt])
             else:
                 miss_indices.append(i)
                 miss_messages.append(messages_list[i])
 
         if miss_messages:
             generated = self._get_engine().generate_batch(miss_messages)
-            for idx, resp in zip(miss_indices, generated):
-                self.cache[kind][prompts[idx]] = resp
+            for idx, (thinking, resp) in zip(miss_indices, generated):
+                self.cache[kind][prompts[idx]] = {"response": resp, "thinking": thinking}
                 responses[idx] = resp
             self.save_cache()
 
@@ -179,15 +184,15 @@ class Pipeline:
 
         for i, prompt in enumerate(prompts):
             if prompt in self.cache[kind]:
-                responses[i] = self.cache[kind][prompt]
+                responses[i] = self._cache_response(self.cache[kind][prompt])
             else:
                 miss_indices.append(i)
                 miss_messages.append([{"role": "user", "content": prompt}])
 
         if miss_messages:
             generated = self._get_engine().generate_batch(miss_messages)
-            for idx, resp in zip(miss_indices, generated):
-                self.cache[kind][prompts[idx]] = resp
+            for idx, (thinking, resp) in zip(miss_indices, generated):
+                self.cache[kind][prompts[idx]] = {"response": resp, "thinking": thinking}
                 responses[idx] = resp
             self.save_cache()
 
