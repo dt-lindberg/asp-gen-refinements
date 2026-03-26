@@ -22,18 +22,14 @@ THINKING = False
 # TOP_K:            only the top-K most likely tokens are considered at each step
 # MIN_P:            minimum probability a token must have relative to the top token to be considered
 MAX_TOKENS = 2048
-MAX_MODEL_LEN = 65536
-MAX_NUM_BATCHED_TOKENS = 16384
+MAX_MODEL_LEN = 12256
+MAX_NUM_BATCHED_TOKENS = 2048
 MAX_NUM_SEQS = 10
 TEMPERATURE = 0.7
 GPU_MEMORY_UTILIZATION = 0.95
 TOP_P = 0.8
 TOP_K = 20
 MIN_P = 0.01
-# 96KB per token for Qwen3-30B-A3B-Instruct-2507-Q4_K_M
-# At MAX_MODEL_LEN=65536: ~6.3GB KV footprint per full-length sequence
-# MAX_NUM_SEQS=10 is a scheduler cap; paged attention allocates blocks
-# dynamically so small sequences run more concurrently than large ones
 
 # CLINGO
 # CLINGO_MAX_MODELS:Cap model enumeration to detect severely under-constrained programs without hanging

@@ -26,10 +26,12 @@ if __name__ == "__main__":
     print("===" * 45)
     print(longest_inputs[0])
     print("===" * 45)
+    print(longest_inputs[0].split(" "))
+    print("===" * 45)
 
     print(
-        f"Top {TOP_K} longest programs (# of WORDS): {list(map(lambda x: len(x), longest_inputs))}",
+        f"Top {TOP_K} longest programs (# of WORDS): {list(map(lambda x: len(x.split(' ')), longest_inputs))}",
     )
     print("Approximate tokens (1.3–1.7 tokens per word):")
     for inp in longest_inputs:
-        print(f"{len(inp) * 1.3:.2f} - {len(inp) * 1.7:.2f}")
+        print(f"{len(inp.split(' ')) * 1.3:.2f} - {len(inp.split(' ')) * 1.7:.2f}")
