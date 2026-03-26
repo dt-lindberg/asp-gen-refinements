@@ -8,17 +8,18 @@ from clingo.control import Control
 from clingo.symbol import parse_term
 
 from logger import setup_logging, get_logger
+from config import (
+    DEFAULT_ENGINE,
+    TEMPERATURE,
+    MAX_TOKENS,
+    CLINGO_MAX_MODELS,
+    CLINGO_TIMEOUT,
+    CONSTRAINTS_SYSTEM,
+    CONSTRAINTS_ASSISTANT_ACK,
+)
 
 setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
 logger = get_logger(__name__)
-
-_CONSTRAINTS_SYSTEM = (
-    "You are a semantic parser to turn clues in a problem into logical rules "
-    "using only provided constants and predicates."
-)
-_CONSTRAINTS_ASSISTANT_ACK = (
-    "Ok. I will only write constraints under the provided forms."
-)
 
 
 # clingo context used to define python functions in clingo
@@ -32,9 +33,9 @@ class Context:
 
 class Pipeline:
     def __init__(self, args):
-        self.engine = "qwen3-30b-local"
-        self.temperature = 0.7
-        self.max_tokens = 1500
+        self.engine = DEFAULT_ENGINE
+        self.temperature = TEMPERATURE
+        self.max_tokens = MAX_TOKENS
         self.path_prompt = {}
         self.prompt = {}
         self.path_cache = {}
@@ -139,9 +140,9 @@ class Pipeline:
             ex2 = "Problem " + ex2 + "\n\nConstraints:"
             ex3 = "Problem " + ex3
             messages = [
-                {"role": "system", "content": _CONSTRAINTS_SYSTEM},
+                {"role": "system", "content": CONSTRAINTS_SYSTEM},
                 {"role": "user", "content": general},
-                {"role": "assistant", "content": _CONSTRAINTS_ASSISTANT_ACK},
+                {"role": "assistant", "content": CONSTRAINTS_ASSISTANT_ACK},
                 {"role": "user", "content": ex1},
                 {"role": "assistant", "content": response1},
                 {"role": "user", "content": ex2},
@@ -211,14 +212,8 @@ class Pipeline:
         def _clingo_logger(code, message):
             clingo_messages.append((code, message))
 
-        # Cap at 1001: enough to trigger the SEVERELY_UNDERCONSTRAINED_THRESHOLD=1000
-        # path in refinement_loop.py, while preventing multi-billion model enumeration
-        # that causes indefinite hangs on under-constrained programs.
-        MAX_MODELS = 1001
-        TIMEOUT = 30.0  # wall-clock seconds, shared for ground() and solve()
-
         clingo_control = Control(
-            [str(MAX_MODELS), "--warn=none", "--opt-mode=optN", "-t", "4"],
+            [str(CLINGO_MAX_MODELS), "--warn=none", "--opt-mode=optN", "-t", "4"],
             logger=_clingo_logger,
         )
         models = []
@@ -254,8 +249,8 @@ class Pipeline:
 
         threading.Thread(target=_do_ground, daemon=True).start()
 
-        if not ground_done.wait(TIMEOUT):
-            logger.warning(f"Clingo ground() timed out after {TIMEOUT}s, skipping puzzle")
+        if not ground_done.wait(CLINGO_TIMEOUT):
+            logger.warning(f"Clingo ground() timed out after {CLINGO_TIMEOUT}s, skipping puzzle")
             return RuntimeError, []
 
         if ground_exc[0] is not None:
@@ -282,12 +277,12 @@ class Pipeline:
             on_model_cb = lambda model: models.append(model.symbols(atoms=True))
 
         with clingo_control.solve(on_model=on_model_cb, async_=True) as handle:
-            finished = handle.wait(TIMEOUT)
+            finished = handle.wait(CLINGO_TIMEOUT)
             if not finished:
                 handle.cancel()
                 handle.wait()
                 logger.warning(
-                    f"Clingo solve timed out after {TIMEOUT}s "
+                    f"Clingo solve timed out after {CLINGO_TIMEOUT}s "
                     f"({len(models)} models found so far), cancelling"
                 )
 

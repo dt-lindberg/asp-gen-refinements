@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-FORMAT = "%(asctime)s [%(levelname)s] %(name)s - %(funcName)s:%(lineno)d > %(message)s"
+from config import LOG_FORMAT, ALLOWED_LOGGERS
 
 
 def _set_log_level(log_level):
@@ -49,14 +49,14 @@ def setup_logging(log_level="info", force=False):
 
     logging.basicConfig(
         level=log_level,
-        format=FORMAT,
+        format=LOG_FORMAT,
         handlers=handlers,
         force=force,
     )
 
     # Block all loggers by default, then allow only specific ones
     logging.getLogger().setLevel(logging.WARNING)
-    for name in ("__main__", "pipeline", "refinement_loop", "vllm_engine"):
+    for name in ALLOWED_LOGGERS:
         logging.getLogger(name).setLevel(log_level)
 
     # Route warnings to logger as well

@@ -5,20 +5,21 @@ import re
 import time
 
 from logger import setup_logging, get_logger
+from config import (
+    MODEL_PATH,
+    SEED,
+    THINKING,
+    MAX_MODEL_LEN,
+    MAX_NUM_BATCHED_TOKENS,
+    MAX_NUM_SEQS,
+    GPU_MEMORY_UTILIZATION,
+    TOP_P,
+    TOP_K,
+    MIN_P,
+)
 
 setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
 logger = get_logger(__name__)
-
-# Path to model on Snellius
-MODEL_PATH = (
-    "/home/dlindberg/.cache/huggingface/hub/"
-    "models--unsloth--Qwen3-30B-A3B-Instruct-2507-GGUF/snapshots/"
-    "eea7b2be5805a5f151f8847ede8e5f9a9284bf77/"
-    "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf"
-)
-
-# Used to control randomness, passed to vLLM and can be re-used
-SEED = 132
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 
@@ -26,10 +27,10 @@ _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 class VLLMEngine:
     def __init__(
         self,
-        max_tokens=6000,
-        max_model_len=16000,
-        max_num_batched_tokens=8192,
-        max_num_seqs=25,
+        max_tokens=1500,
+        max_model_len=MAX_MODEL_LEN,
+        max_num_batched_tokens=MAX_NUM_BATCHED_TOKENS,
+        max_num_seqs=MAX_NUM_SEQS,
         temperature=0.7,
     ):
         """
@@ -49,7 +50,7 @@ class VLLMEngine:
             max_model_len=max_model_len,
             max_num_seqs=max_num_seqs,
             max_num_batched_tokens=max_num_batched_tokens,
-            gpu_memory_utilization=0.93,
+            gpu_memory_utilization=GPU_MEMORY_UTILIZATION,
             seed=SEED,
         )
         logger.info(f"Model loaded in {time.perf_counter() - t0:.2f}s")
@@ -58,9 +59,9 @@ class VLLMEngine:
         self.sampling_params = SamplingParams(
             temperature=temperature,
             max_tokens=max_tokens,
-            top_p=0.8,
-            top_k=20,
-            min_p=0.01,
+            top_p=TOP_P,
+            top_k=TOP_K,
+            min_p=MIN_P,
         )
 
     def _apply_template(self, messages):
@@ -70,7 +71,7 @@ class VLLMEngine:
                 messages,
                 tokenize=False,
                 add_generation_prompt=True,
-                enable_thinking=False,
+                enable_thinking=THINKING,
             )
         except TypeError:
             return self.tokenizer.apply_chat_template(
