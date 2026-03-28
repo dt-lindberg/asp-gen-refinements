@@ -29,6 +29,11 @@ def _split_thinking(text):
 
     * thinking: content inside the first <think>...</think> block, or "" if absent
     * response: remaining text after stripping the thinking block
+
+    Handles two cases:
+    1. Full block in output: <think>...</think>response
+    2. <think> was prepended to prompt, so output starts directly with thinking
+       content and ends with </think>response (no opening tag in output).
     """
     thinking_re = re.compile(r"<think>(.*?)</think>", re.DOTALL)
     match = thinking_re.search(text)
@@ -36,6 +41,14 @@ def _split_thinking(text):
         thinking = match.group(1).strip()
         response = thinking_re.sub("", text).strip()
         return thinking, response
+
+    # <think> was in the prompt; output begins with thinking content directly
+    end_idx = text.find("</think>")
+    if end_idx != -1:
+        thinking = text[:end_idx].strip()
+        response = text[end_idx + len("</think>"):].strip()
+        return thinking, response
+
     return "", text.strip()
 
 
@@ -80,20 +93,31 @@ class VLLMEngine:
         )
 
     def _apply_template(self, messages):
-        """Apply chat template, disabling thinking mode if supported."""
+        """Apply chat template, enabling thinking mode for Qwen3.
+
+        GGUF-embedded tokenizers silently ignore enable_thinking, so we
+        manually append <think> to activate Qwen3 thinking mode when needed.
+        """
         try:
-            return self.tokenizer.apply_chat_template(
+            formatted = self.tokenizer.apply_chat_template(
                 messages,
                 tokenize=False,
                 add_generation_prompt=True,
                 enable_thinking=THINKING,
             )
         except TypeError:
-            return self.tokenizer.apply_chat_template(
+            formatted = self.tokenizer.apply_chat_template(
                 messages,
                 tokenize=False,
                 add_generation_prompt=True,
             )
+
+        # GGUF tokenizers may silently ignore enable_thinking. For Qwen3,
+        # thinking mode is activated by ending the prompt with <think>\n.
+        if THINKING and not formatted.rstrip("\n").endswith("<think>"):
+            formatted = formatted.rstrip("\n") + "<think>\n"
+
+        return formatted
 
     def generate_batch(self, messages_list):
         """Generate responses for a batch of conversations.
