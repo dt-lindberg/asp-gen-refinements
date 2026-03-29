@@ -10,6 +10,7 @@ from config import (
     SEED,
     THINKING,
     MAX_TOKENS,
+    THINK_END_TOKEN_ID,
     MAX_MODEL_LEN,
     MAX_NUM_BATCHED_TOKENS,
     MAX_NUM_SEQS,
@@ -71,6 +72,21 @@ class VLLMEngine:
         """
         from vllm import LLM, SamplingParams
 
+        if THINKING:
+            if THINK_END_TOKEN_ID is None:
+                raise ValueError(
+                    "THINK_END_TOKEN_ID is not set in config.py. "
+                    "Run find_think_tokens.job and hard-code the result."
+                )
+            # FQCN string: vLLM loads the class by importing the module
+            logits_processors = ["think_logits_processor:ThinkLogitsProcessor"]
+            logger.info(
+                f"ThinkLogitsProcessor enabled via FQCN "
+                f"(THINK_END_TOKEN_ID={THINK_END_TOKEN_ID})"
+            )
+        else:
+            logits_processors = None
+
         logger.info(f"Loading model from {MODEL_PATH}")
         t0 = time.perf_counter()
         self.llm = LLM(
@@ -80,6 +96,7 @@ class VLLMEngine:
             max_num_batched_tokens=max_num_batched_tokens,
             gpu_memory_utilization=GPU_MEMORY_UTILIZATION,
             seed=SEED,
+            logits_processors=logits_processors,
         )
         logger.info(f"Model loaded in {time.perf_counter() - t0:.2f}s")
 
@@ -140,6 +157,17 @@ class VLLMEngine:
         logger.info(
             f"Generated {n_tokens} tokens in {t_gen:.2f}s ({n_tokens / t_gen:.2f} tok/s)"
         )
+
+        # Verify thinking was properly closed when thinking mode is enabled
+        if THINKING:
+            for i, o in enumerate(outputs):
+                raw = o.outputs[0].text
+                if "</think>" not in raw:
+                    logger.error(
+                        f"Output {i} has no </think> tag — thinking trace may have "
+                        f"leaked into response. Raw output (first 200 chars): "
+                        f"{repr(raw[:200])}"
+                    )
 
         # Each response becomes tuple of (thinking, output)
         return [_split_thinking(o.outputs[0].text) for o in outputs]

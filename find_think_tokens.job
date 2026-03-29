@@ -1,0 +1,21 @@
+#!/bin/bash
+
+#SBATCH --job-name=FindThinkTokens
+#SBATCH --partition=gpu_a100
+#SBATCH --time=00:15:00
+#SBATCH --gpus=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=18
+#SBATCH --chdir=/home/dlindberg/Projects/asp-gen-refinements
+#SBATCH --output=outputs/find_think_tokens_%A.out
+
+module purge
+module load 2025
+module load CUDA/12.8.0
+module load Python/3.13.5-GCCcore-14.3.0
+
+mkdir -p outputs
+
+source .venv/bin/activate
+
+python3 find_think_tokens.py
