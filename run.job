@@ -1,11 +1,11 @@
 #!/bin/bash
 
 #SBATCH --job-name=ASPGen
-#SBATCH --partition=gpu_a100
-#SBATCH --time=02:00:00
+#SBATCH --partition=gcn_h100
+#SBATCH --time=04:00:00
 #SBATCH --gpus=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=18
+#SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/dlindberg/Projects/asp-gen-refinements
 #SBATCH --output=outputs/slurm_output_%A.out
 
