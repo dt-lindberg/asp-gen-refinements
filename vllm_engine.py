@@ -28,7 +28,9 @@ logger = get_logger(__name__)
 def _split_thinking(text):
     """Split raw vLLM output into (thinking, response).
 
-    * thinking: content inside the first <think>...</think> block, or "" if absent
+    ASSUMES:
+    * thinking is really enabled, a 'complete' thinking block is
+        <think>...</think>, anything else is incomplete thinking.
     * response: remaining text after stripping the thinking block
 
     Handles two cases:
@@ -50,6 +52,7 @@ def _split_thinking(text):
         response = text[end_idx + len("</think>") :].strip()
         return thinking, response
 
+    # Fallback to returning the entire text as response
     return "", text.strip()
 
 
@@ -72,20 +75,11 @@ class VLLMEngine:
         """
         from vllm import LLM, SamplingParams
 
-        # if THINKING:
-        #     if THINK_END_TOKEN_ID is None:
-        #         raise ValueError(
-        #             "THINK_END_TOKEN_ID is not set in config.py. "
-        #             "Run find_think_tokens.job and hard-code the result."
-        #         )
-        #     # FQCN string: vLLM loads the class by importing the module
-        #     logits_processors = ["think_logits_processor:ThinkLogitsProcessor"]
-        #     logger.info(
-        #         f"ThinkLogitsProcessor enabled via FQCN "
-        #         f"(THINK_END_TOKEN_ID={THINK_END_TOKEN_ID})"
-        #     )
-        # else:
-        #     logits_processors = None
+        # # Use think logits processor to enforce thinking budget
+        # # FQCN string: vLLM loads the class by importing the module
+        # logits_processors = (
+        #     ["think_logits_processor:ThinkLogitsProcessor"] if THINKING else None
+        # )
 
         logger.info(f"Loading model from {MODEL_PATH}")
         t0 = time.perf_counter()
@@ -109,27 +103,6 @@ class VLLMEngine:
             min_p=MIN_P,
         )
 
-    def _apply_template(self, messages):
-        """Apply chat template, enabling thinking mode for Qwen3."""
-        formatted = self.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=THINKING,
-        )
-        return formatted
-        # except TypeError:
-        #     formatted = self.tokenizer.apply_chat_template(
-        #         messages,
-        #         tokenize=False,
-        #         add_generation_prompt=True,
-        #     )
-
-        # # GGUF tokenizers may silently ignore enable_thinking. For Qwen3,
-        # # thinking mode is activated by ending the prompt with <think>\n.
-        # if THINKING and not formatted.rstrip("\n").endswith("<think>"):
-        #     formatted = formatted.rstrip("\n") + "<think>\n"
-
     def generate_batch(self, messages_list):
         """Generate responses for a batch of conversations.
 
@@ -139,7 +112,15 @@ class VLLMEngine:
         Returns:
             list of (thinking, response) tuples where thinking is "" when absent.
         """
-        formatted = [self._apply_template(msgs) for msgs in messages_list]
+        formatted = [
+            self.tokenizer.apply_chat_template(
+                msgs,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=THINKING,
+            )
+            for msgs in messages_list
+        ]
 
         logger.info(f"Generating batch of {len(formatted)} prompts...")
         t0 = time.perf_counter()
@@ -164,4 +145,10 @@ class VLLMEngine:
                     )
 
         # Each response becomes tuple of (thinking, output)
-        return [_split_thinking(o.outputs[0].text) for o in outputs]
+        # Branch on thinking, allows us to call _split_thinking with the promise of having
+        # <think> and/or </think> tokens in the response
+        if THINKING:
+            return [_split_thinking(o.outputs[0].text) for o in outputs]
+        else:
+            # Set thinking="" if not enabled
+            return [("", o.outputs[0].text) for o in outputs]
