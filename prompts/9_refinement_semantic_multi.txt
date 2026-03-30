@@ -1,3 +1,5 @@
+Think step-by-step, but using NO MORE than 2000 tokens.
+
 The following ASP program is syntactically valid but produces <NUM_ANSWER_SETS> answer sets instead of exactly 1. Some assignments are not uniquely determined by the constraints.
 
 <SEMANTIC_FEEDBACK>

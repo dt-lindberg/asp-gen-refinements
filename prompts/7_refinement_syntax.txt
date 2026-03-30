@@ -1,3 +1,5 @@
+Think step-by-step, but using NO MORE than 2000 tokens.
+
 There are syntactical mistakes in the following ASP code.
 
 IMPORTANT: Clingo's reported line numbers are approximate. Due to parser cascades, the actual error may be several lines away from the reported location. Treat each reported location as a hint and scan the surrounding lines for structural issues (e.g. unsupported operators, malformed aggregates, missing punctuation).

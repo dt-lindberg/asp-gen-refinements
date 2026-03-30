@@ -1,3 +1,5 @@
+Think step-by-step, but using NO MORE than 2000 tokens.
+
 The following ASP program is syntactically valid but produces no answer sets (unsatisfiable). The integrity constraints are contradictory or too restrictive to allow any valid assignment.
 
 Common causes:

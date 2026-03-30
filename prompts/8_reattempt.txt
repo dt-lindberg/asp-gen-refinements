@@ -1,3 +1,5 @@
+Think step-by-step, but using NO MORE than 2000 tokens.
+
 You are an expert Answer Set Programming (ASP) programmer solving logic grid puzzles.
 You are given a puzzle description, constants, predicates, and your previous attempts
 with feedback from the Clingo solver. Write a complete ASP program that produces

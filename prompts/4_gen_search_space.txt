@@ -1,3 +1,5 @@
+Think step-by-step, but using NO MORE than 2000 tokens.
+
 Given some categorized constants in the form "category: constant_1; constant_2; ...; constant_n" and some predicates about the relation among different categories of constants, write ASP (Answer Set Programming) rules to generate the search space of possible relations. In your response, include a SINGLE ASP code-block with the rules - it will be automatically parsed from your response.
 
 Constants:
