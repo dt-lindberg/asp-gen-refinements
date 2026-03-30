@@ -1,4 +1,3 @@
-Think step-by-step, but using NO MORE than 2000 tokens.
 
 Given categorized constants of the form "category: constant_1; constant_2; ...; constant_n", format the category and constants such that:
 each category consists of only lowercase letters and underscores, and

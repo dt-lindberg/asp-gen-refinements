@@ -1,4 +1,3 @@
-Think step-by-step, but using NO MORE than 2000 tokens.
 
 Consider the constraint in the following form
 <C1>; <C2>; ...; <Cm> :- <L1>, <L2>, ..., <Ln>.
