@@ -158,7 +158,11 @@ def multi_attempt_batch(puzzle_data, pipeline, statuses, asets_or_errs_list):
             history = [(puzzle_data[i]["rules_all"], puzzle_data[i]["clingo_errors_0"])]
             for code, _, _, clingo_errors in attempt_data[i]:
                 history.append((code, clingo_errors))
-            prompts.append(_build_attempt_prompt(puzzle_data[i], history, system_prompt, instruction))
+            prompts.append(
+                _build_attempt_prompt(
+                    puzzle_data[i], history, system_prompt, instruction
+                )
+            )
 
         responses = pipeline.gen_response_raw_batch("reattempt", prompts)
 
@@ -176,7 +180,9 @@ def multi_attempt_batch(puzzle_data, pipeline, statuses, asets_or_errs_list):
             answer_sets_count = len(asets_or_err) if status is None else 0
             clingo_errors = _build_feedback(status, asets_or_err)
 
-            attempt_data[i].append((rules_all, answer_sets_count, clingo_time, clingo_errors))
+            attempt_data[i].append(
+                (rules_all, answer_sets_count, clingo_time, clingo_errors)
+            )
 
             if status is None and len(asets_or_err) == 1:
                 done[i] = True
