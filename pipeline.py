@@ -16,6 +16,7 @@ from config import (
     CLINGO_TIMEOUT,
     CONSTRAINTS_SYSTEM,
     CONSTRAINTS_ASSISTANT_ACK,
+    THINKING_OVERFLOW,
 )
 
 setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
@@ -113,6 +114,11 @@ class Pipeline:
         if miss_messages:
             generated = self._get_engine().generate_batch(miss_messages)
             for idx, (thinking, resp) in zip(miss_indices, generated):
+                if resp == THINKING_OVERFLOW:
+                    logger.warning(
+                        f"Thinking overflow on prompt {idx} (kind={kind}): "
+                        "model exhausted token budget before closing </think>"
+                    )
                 self.cache[kind][prompts[idx]] = {"response": resp, "thinking": thinking}
                 responses[idx] = resp
             self.save_cache()
@@ -170,6 +176,11 @@ class Pipeline:
         if miss_messages:
             generated = self._get_engine().generate_batch(miss_messages)
             for idx, (thinking, resp) in zip(miss_indices, generated):
+                if resp == THINKING_OVERFLOW:
+                    logger.warning(
+                        f"Thinking overflow on prompt {idx} (kind={kind}): "
+                        "model exhausted token budget before closing </think>"
+                    )
                 self.cache[kind][prompts[idx]] = {"response": resp, "thinking": thinking}
                 responses[idx] = resp
             self.save_cache()
@@ -192,6 +203,11 @@ class Pipeline:
         if miss_messages:
             generated = self._get_engine().generate_batch(miss_messages)
             for idx, (thinking, resp) in zip(miss_indices, generated):
+                if resp == THINKING_OVERFLOW:
+                    logger.warning(
+                        f"Thinking overflow on prompt {idx} (kind={kind}): "
+                        "model exhausted token budget before closing </think>"
+                    )
                 self.cache[kind][prompts[idx]] = {"response": resp, "thinking": thinking}
                 responses[idx] = resp
             self.save_cache()

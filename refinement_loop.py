@@ -4,7 +4,7 @@ import time
 
 from logger import setup_logging, get_logger
 from utils import extract_code_blocks
-from config import MAX_ATTEMPTS, SEVERELY_UNDERCONSTRAINED_THRESHOLD, MAX_VARIABLE_ATOMS
+from config import MAX_ATTEMPTS, SEVERELY_UNDERCONSTRAINED_THRESHOLD, MAX_VARIABLE_ATOMS, THINKING_OVERFLOW
 
 setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
 logger = get_logger(__name__)
@@ -168,6 +168,20 @@ def multi_attempt_batch(puzzle_data, pipeline, statuses, asets_or_errs_list):
 
         # Run Clingo for each active puzzle and record results
         for i, resp in zip(active, responses):
+            # Thinking overflow: model never closed </think>, no usable response was produced.
+            # Register as a distinct error without invoking Clingo.
+            if resp == THINKING_OVERFLOW:
+                logger.error(
+                    f"Puzzle {i}: thinking overflow on reattempt — "
+                    "model exhausted token budget before closing </think>"
+                )
+                statuses[i] = RuntimeError
+                asets_or_errs[i] = []
+                attempt_data[i].append(
+                    ("", 0, 0.0, "thinking overflow: model exhausted token budget before closing </think>")
+                )
+                continue
+
             rules_all = extract_code_blocks(resp)
 
             t0 = time.time()

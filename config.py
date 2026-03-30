@@ -23,18 +23,25 @@ THINKING = True
 # TOP_K:                only the top-K most likely tokens are considered at each step
 # MIN_P:                minimum probability a token must have relative to the top token to be considered
 # THINK_END_TOKEN_ID:   token ID for </think> in the Qwen3 tokenizer (determined by find_think_tokens.py)
-MAX_TOKENS = 6000
-MAX_THINK_TOKENS = 4000
-MAX_MODEL_LEN = 32768
-MAX_NUM_BATCHED_TOKENS = 2048
+MAX_TOKENS = 32_768
+# MAX_THINK_TOKENS = 4_000 # N/A, only for testing
+MAX_MODEL_LEN = 65_560
+MAX_NUM_BATCHED_TOKENS = 2_048
 MAX_NUM_SEQS = 10
-TEMPERATURE = 0.7
 GPU_MEMORY_UTILIZATION = 0.95
 THINK_START_TOKEN_ID = 151667  # <think>  — from find_think_tokens.job (2026-03-28)
-THINK_END_TOKEN_ID = 151668    # </think> — from find_think_tokens.job (2026-03-28)
-TOP_P = 0.8
+THINK_END_TOKEN_ID = 151668  # </think> — from find_think_tokens.job (2026-03-28)
+
+# THINKING recommended values
+TEMPERATURE = 0.6
+TOP_P = 0.95
 TOP_K = 20
 MIN_P = 0.01
+# NON-THINKING recommended values
+# TEMPERATURE = 0.7
+# TOP_P = 0.8
+# TOP_K = 20
+# MIN_P = 0.01
 
 # CLINGO
 # CLINGO_MAX_MODELS:Cap model enumeration to detect severely under-constrained programs without hanging
@@ -47,9 +54,13 @@ CLINGO_TIMEOUT = 30.0
 # SEVERELY_UNDERCONSTRAINED_THRESHOLD:
 # Programs with more answer sets than this get a simplified "severely underconstrained" message
 # MAX_VARIABLE_ATOMS: Limit variable atoms shown in semantic feedback to keep prompts manageable
-MAX_ATTEMPTS = 6
+MAX_ATTEMPTS = 4
 SEVERELY_UNDERCONSTRAINED_THRESHOLD = 1000
 MAX_VARIABLE_ATOMS = 30
+
+# Sentinel returned by _split_thinking when the model exhausted its token budget
+# before closing </think>. Downstream code checks for this to register a distinct error.
+THINKING_OVERFLOW = "__THINKING_OVERFLOW__"
 
 # PIPELINE
 DEFAULT_ENGINE = "qwen3-30b-local"

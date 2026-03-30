@@ -19,6 +19,7 @@ from config import (
     TOP_P,
     TOP_K,
     MIN_P,
+    THINKING_OVERFLOW,
 )
 
 setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
@@ -37,7 +38,10 @@ def _split_thinking(text):
     1. Full block in output: <think>...</think>response
     2. <think> was prepended to prompt, so output starts directly with thinking
        content and ends with </think>response (no opening tag in output).
+    3. No </think> is found, that means the thinking never ended. To avoid
+       overflow, we return a semi-empty response in this case.
     """
+    # Case 1:
     thinking_re = re.compile(r"<think>(.*?)</think>", re.DOTALL)
     match = thinking_re.search(text)
     if match:
@@ -45,15 +49,17 @@ def _split_thinking(text):
         response = thinking_re.sub("", text).strip()
         return thinking, response
 
+    # Case 2:
     # <think> was in the prompt; output begins with thinking content directly
     end_idx = text.find("</think>")
     if end_idx != -1:
         thinking = text[:end_idx].strip()
         response = text[end_idx + len("</think>") :].strip()
         return thinking, response
-
-    # Fallback to returning the entire text as response
-    return "", text.strip()
+    else:
+        # Case 3: model exhausted its token budget inside the thinking block.
+        # Return the sentinel so downstream code can register this as a distinct error.
+        return text, THINKING_OVERFLOW
 
 
 class VLLMEngine:
