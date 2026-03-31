@@ -26,8 +26,8 @@ source .venv/bin/activate
 python3 main.py \
     --debug \
     --dataset_name train \
-    --num 5 \
-    --engine qwen3-30b-local-thinking \
+    --num 3 \
+    --engine qwen3-30b-stop-fix \
 
 # Stop monitor and print hardware report
 kill "$MONITOR_PID" 2>/dev/null

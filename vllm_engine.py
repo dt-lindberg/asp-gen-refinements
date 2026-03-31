@@ -26,6 +26,26 @@ setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
 logger = get_logger(__name__)
 
 
+def _trim_extra_turn(text: str) -> str:
+    """Cut off any second assistant turn that slipped through the stop rules.
+
+    When the model skips <|im_end|> it emits one of these prefixes to start
+    a new turn.  We cut at the earliest occurrence so only the first response
+    reaches downstream parsing.
+    """
+    markers = [
+        "\n<|im_start|>assistant\n",
+        "\nassistant\n<think>",
+        "\nassistant\n\n<think>",
+    ]
+    cut = None
+    for m in markers:
+        i = text.find(m)
+        if i != -1:
+            cut = i if cut is None else min(cut, i)
+    return text[:cut].rstrip() if cut is not None else text
+
+
 def _split_thinking(text):
     """Split raw vLLM output into (thinking, response).
 
@@ -101,12 +121,58 @@ class VLLMEngine:
         logger.info(f"Model loaded in {time.perf_counter() - t0:.2f}s")
 
         self.tokenizer = self.llm.get_tokenizer()
+        self._debug_tokenizer()
+
+        im_end_ids = self.tokenizer.encode("<|im_end|>", add_special_tokens=False)
+        eos_id = getattr(self.tokenizer, "eos_token_id", None)
+        stop_token_ids = []
+        if len(im_end_ids) == 1:
+            stop_token_ids.append(im_end_ids[0])
+        if eos_id is not None and eos_id not in stop_token_ids:
+            stop_token_ids.append(eos_id)
+
         self.sampling_params = SamplingParams(
             temperature=temperature,
             max_tokens=max_tokens,
             top_p=TOP_P,
             top_k=TOP_K,
             min_p=MIN_P,
+            stop=[
+                "<|im_end|>",
+                "<|im_start|>assistant",
+                "assistant\n<think>",
+                "assistant\n\n<think>",
+            ],
+            stop_token_ids=stop_token_ids or None,
+        )
+
+    def _debug_tokenizer(self):
+        """Log how the tokenizer round-trips key special strings.
+
+        Runs once at startup so we can verify whether <|im_end|> encodes to a
+        single visible token or a special-token ID that decodes to empty string.
+        That determines whether stop= (string match) or stop_token_ids= (ID
+        match) is the effective guard.
+        """
+        candidates = ["<|im_end|>", "<|im_start|>", "assistant", "<think>", "</think>"]
+        for s in candidates:
+            ids = self.tokenizer.encode(s, add_special_tokens=False)
+            decoded = self.tokenizer.decode(ids)
+            logger.info("Tokenize %r -> ids=%s -> decode=%r", s, ids, decoded)
+        eos_id = getattr(self.tokenizer, "eos_token_id", None)
+        logger.info("eos_token_id=%r", eos_id)
+
+    def _log_loop_tail(self, text: str, token_ids, idx: int):
+        """Warn when a generation looks like it looped."""
+        tail_ids = list(token_ids[-20:])
+        tail_text = self.tokenizer.decode(tail_ids)
+        logger.warning(
+            "Loop Out %d | assistant_ct=%d | raw_tail=%r | tail_ids=%s | tail_text=%r",
+            idx,
+            text.count("assistant"),
+            text[-300:],
+            tail_ids,
+            tail_text,
         )
 
     def generate_batch(self, messages_list):
@@ -139,10 +205,18 @@ class VLLMEngine:
             f"Generated {n_tokens} tokens in {t_gen:.2f}s ({n_tokens / t_gen:.2f} tok/s)"
         )
 
+        # Detect looping and trim any extra assistant turns before parsing.
+        raw_texts = []
+        for i, o in enumerate(outputs):
+            raw = o.outputs[0].text
+            if "assistant" in raw or raw.count("</think>") > 1:
+                self._log_loop_tail(raw, o.outputs[0].token_ids, i)
+            raw = _trim_extra_turn(raw)
+            raw_texts.append(raw)
+
         # Verify thinking was properly closed when thinking mode is enabled
         if THINKING:
-            for i, o in enumerate(outputs):
-                raw = o.outputs[0].text
+            for i, raw in enumerate(raw_texts):
                 if "</think>" not in raw:
                     logger.error(
                         f"Output {i} has no </think> tag — thinking trace may have "
@@ -154,7 +228,7 @@ class VLLMEngine:
         # Branch on thinking, allows us to call _split_thinking with the promise of having
         # <think> and/or </think> tokens in the response
         if THINKING:
-            return [_split_thinking(o.outputs[0].text) for o in outputs]
+            return [_split_thinking(raw) for raw in raw_texts]
         else:
             # Set thinking="" if not enabled
-            return [("", o.outputs[0].text) for o in outputs]
+            return [("", raw) for raw in raw_texts]
