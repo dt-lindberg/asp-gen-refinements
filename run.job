@@ -26,7 +26,7 @@ source .venv/bin/activate
 python3 main.py \
     --debug \
     --dataset_name train \
-    --num 50 \
+    --num 10 \
     --engine qwen3-30b-local-thinking \
 
 # Stop monitor and print hardware report
