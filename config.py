@@ -1,9 +1,8 @@
 # MODEL
-from huggingface_hub import hf_hub_download
-
 MODEL_REPO_ID = "unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF"
 MODEL_FILENAME = "Qwen3-30B-A3B-Thinking-2507-Q4_K_M.gguf"
-MODEL_PATH = hf_hub_download(repo_id=MODEL_REPO_ID, filename=MODEL_FILENAME)
+# Hardcoded path for cluster; local evaluation does not need the model file
+MODEL_PATH = "/home/dlindberg/.cache/huggingface/hub/models--unsloth--Qwen3-30B-A3B-Thinking-2507-GGUF/snapshots/a9b37aaac12b2bd0098783a443429543dd76a14d/Qwen3-30B-A3B-Thinking-2507-Q4_K_M.gguf"
 
 # Seed for vLLM to allow deterministic cache reuse across runs
 SEED = 132
