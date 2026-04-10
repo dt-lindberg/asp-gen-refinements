@@ -64,6 +64,7 @@ class VLLMEngine:
             top_p=TOP_P,
             top_k=TOP_K,
             min_p=MIN_P,
+            seed=SEED,
         )
 
     def _apply_template(self, messages):
