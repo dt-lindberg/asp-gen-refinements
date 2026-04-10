@@ -5,14 +5,19 @@ description: Use this skill whenever the user asks to review, check, or analyse 
 
 # Review Mistakes File
 
-The pipeline generates ASP programs to solve logic-grid puzzles. Each row in a mistakes file is one puzzle. The two columns that matter are `prediction` (the answer set the model produced) and `solution` (the ground-truth tab-separated table).
+The pipeline generates ASP programs to solve logic-grid puzzles. Each row in a mistakes file is one puzzle.
+
+> **Note:** Despite the name, these files contain **all** puzzles from the run — not only the incorrect ones. Each row is a complete record including attempts, answer set counts, prediction, and ground-truth solution.
+
+The two columns that matter are `prediction` (the answer set the model produced) and `solution` (the ground-truth tab-separated table).
 
 ## Step 1 — Extract the data
 
-Run the following script to print every puzzle's prediction and solution side-by-side. Adjust the file path as needed.
+Run the following script to print every puzzle's prediction, solution, and per-attempt answer set counts. Adjust the file path as needed.
 
 ```python
 import openpyxl
+from collections import Counter
 
 wb = openpyxl.load_workbook("mistakes/<filename>.xlsx")
 ws = wb.active
@@ -20,27 +25,39 @@ headers = [cell.value for cell in ws[1]]
 pred_idx = headers.index("prediction")
 sol_idx  = headers.index("solution")
 
-for row in ws.iter_rows(min_row=2, values_only=True):
-    puzzle_id = row[0]
-    pred = row[pred_idx]
-    sol  = row[sol_idx]
-    print(f"--- Puzzle {puzzle_id} ---")
-    print(f"PREDICTION: {repr(pred)}")
-    print(f"SOLUTION:   {repr(sol)}")
-    print()
-```
-
-Also extract the `#answer_sets_N` columns (one per refinement attempt, N=0,1,2,...) to identify how many answer sets the final attempt produced. These columns follow the pattern `#answer_sets_0`, `#answer_sets_1`, etc.
-
-```python
-# Collect the last non-None answer set count per row
+# All columns tracking how many answer sets clingo found at each attempt
 ans_cols = [i for i, h in enumerate(headers) if h and h.startswith("#answer_sets")]
 
 for row in ws.iter_rows(min_row=2, values_only=True):
     puzzle_id = row[0]
+    pred = row[pred_idx]
+    sol  = row[sol_idx]
+    # All per-attempt counts (None means that attempt did not run)
+    all_counts = [(headers[i], row[i]) for i in ans_cols]
+    print(f"--- Puzzle {puzzle_id} ---")
+    print(f"PREDICTION: {repr(pred)}")
+    print(f"SOLUTION:   {repr(sol)}")
+    print(f"AS counts:  {all_counts}")
+    print()
+```
+
+### Understanding the answer set counts
+
+Each `#answer_sets_N` column records how many answer sets clingo found at attempt N. The pipeline **extracts the prediction from the first attempt that produced exactly 1 answer set** — that is the attempt where `#answer_sets_N == 1`. Subsequent attempts will typically show 0 (because a refinement constraint was added that made the program UNSAT). This means:
+
+- A puzzle "has 1 unique answer set" if **any** `#answer_sets_N` column equals 1.
+- The `final_count` (last non-None value) is usually 0 for solved puzzles, and does **not** identify whether the prediction came from a 1-AS run.
+
+To find all puzzles whose prediction came from a 1-answer-set run:
+
+```python
+one_as_puzzles = []
+for row in ws.iter_rows(min_row=2, values_only=True):
+    puzzle_id = row[0]
     counts = [row[i] for i in ans_cols if row[i] is not None]
-    final_count = counts[-1] if counts else None
-    print(f"Puzzle {puzzle_id}: final answer set count = {final_count}")
+    if any(c == 1 for c in counts):
+        one_as_puzzles.append(puzzle_id)
+print(f"Puzzles with 1-AS prediction: {len(one_as_puzzles)}, IDs: {one_as_puzzles}")
 ```
 
 ## Step 2 — Determine correctness
@@ -66,8 +83,7 @@ Key rules:
 
 ### What makes a prediction wrong
 
-- `prediction` is `None` — no answer set was produced.
-- The prediction is a string like `"12 answer sets"` or `"1001 answer sets"` — clingo found multiple or no unique solutions; the pipeline could not extract a single answer.
+- `prediction` is `None` — no answer set was produced across all attempts.
 - One or more triples are factually wrong (wrong entity pairing, wrong value, swapped assignments between rows).
 - A fictional entity name is misspelled relative to the solution.
 
@@ -75,26 +91,18 @@ Key rules:
 
 Mark a prediction as **uncertain** if it uses integer indices for named entities (people, companies, etc.) where no natural ordering exists and the constants definition is not available to verify the mapping.
 
-## Step 3 — Flag 1-answer-set failures
+## Step 3 — Categorise by answer set outcome
 
-These are the most interesting failures: the model was *confident* (clingo found exactly 1 answer set, meaning the ASP program was uniquely satisfiable) but the answer set does not match the solution. This indicates a semantic modelling error — the constraints are wrong, not just unsolvable.
+Combine the correctness verdict with the answer set counts to split puzzles into four groups:
 
-Identify them by combining the answer set count with correctness:
+| Group | Condition | Meaning |
+|-------|-----------|---------|
+| **1-AS correct** | any count == 1, prediction matches solution | Model found the right unique solution |
+| **1-AS wrong** | any count == 1, prediction does NOT match solution | Model was confident but wrong — constraint bug |
+| **0-AS** | all counts == 0 or None, no valid prediction | Program was UNSAT throughout — never found a solution |
+| **Multi-AS** | final count > 1, prediction is a count string | Program was under-constrained — too many solutions |
 
-```python
-# After determining correctness per puzzle, flag 1-answer-set failures
-for row in ws.iter_rows(min_row=2, values_only=True):
-    puzzle_id   = row[0]
-    pred        = row[pred_idx]
-    counts      = [row[i] for i in ans_cols if row[i] is not None]
-    final_count = counts[-1] if counts else None
-
-    # Prediction present, exactly 1 answer set, but manually determined to be wrong
-    if pred is not None and final_count == 1:
-        print(f"Puzzle {puzzle_id}: 1 answer set but CHECK CORRECTNESS — pred={repr(pred)}")
-```
-
-Flag these separately in the summary as **"1-AS wrong"** because they reveal constraint bugs rather than solvability bugs.
+The **1-AS wrong** group is the most interesting for debugging: the ASP program was uniquely satisfiable but encoded the wrong constraints.
 
 ## Step 4 — Write the summary
 
@@ -103,28 +111,33 @@ After evaluating all puzzles, produce a summary in this format:
 ```
 ## <filename>
 
-### Correct (N)
+### 1-AS Correct (N)
 | Puzzle | Notes |
 |--------|-------|
 | **3**  | Dates 4–7 = August 4–7. All witness/town pairs match. |
-...
+
+### 1-AS Wrong (N)
+| Puzzle | Notes |
+|--------|-------|
+| **X**  | Describe the specific mismatch (e.g. Rosa↔Sherrie dates swapped). |
 
 ### Uncertain (N)
 | Puzzle | Notes |
+|--------|-------|
 | **12** | Uses integer indices for employees — mapping unverifiable without constants definition. |
 
-### 1-Answer-Set Wrong (N)
-| Puzzle | Notes |
-| **X**  | 1 unique answer set produced but assignments are factually wrong (describe the mismatch). |
-
-### Wrong (N)
+### 0-AS / No prediction (N)
 List puzzle IDs inline: 0, 1, 5, 6, ...
-Note any patterns (e.g., clingo overflow, empty predictions, completely wrong domain).
+
+### Multi-AS (N)
+List puzzle IDs inline: 2, 4, ...
 
 ---
-| Correct | Uncertain | 1-AS Wrong | Wrong | Accuracy |
-|---------|-----------|------------|-------|----------|
-| N       | N         | N          | N     | N%       |
+| 1-AS Correct | 1-AS Wrong | Uncertain | 0-AS | Multi-AS | 1-AS Accuracy |
+|--------------|------------|-----------|------|----------|---------------|
+| N            | N          | N         | N    | N        | N%            |
 ```
+
+1-AS Accuracy = 1-AS Correct / (1-AS Correct + 1-AS Wrong).
 
 When comparing multiple files, add a cross-file table showing gains and losses per puzzle ID.
