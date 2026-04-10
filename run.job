@@ -23,6 +23,9 @@ MONITOR_PID=$!
 
 source .venv/bin/activate
 
+# Deterministic vLLM scheduling for reproducibility
+export VLLM_ENABLE_V1_MULTIPROCESSING=0
+
 python3 main.py \
     --debug \
     --dataset_name train \

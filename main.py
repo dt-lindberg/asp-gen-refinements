@@ -9,8 +9,14 @@ from logger import setup_logging, get_logger
 from utils import extract_code_blocks
 from refinement_loop import (
     refinement_loop_batch,
-    MAX_ATTEMPTS,
     _build_semantic_feedback_multi,
+)
+from config import (
+    MAX_ATTEMPTS,
+    DEFAULT_ENGINE,
+    TEMPERATURE,
+    MAX_TOKENS,
+    PROMPT_PATHS,
 )
 
 load_dotenv()
@@ -23,16 +29,7 @@ def main(args):
     logger.info(f"Running with args: {args}")
 
     puzzle_pipeline = Pipeline(vars(args))
-    puzzle_pipeline.path_prompt = {
-        "constants": "prompts/2_constant_formatting.txt",
-        "predicates": "prompts/3_gen_predicates.txt",
-        "search_space": "prompts/4_gen_search_space.txt",
-        "paraphrasing": "prompts/5_paraphrasing.txt",
-        "constraints": "prompts/6_gen_constraints.txt",
-        "refinement_syntax": "prompts/7_refinement_syntax.txt",
-        "refinement_semantic_unsat": "prompts/8_refinement_semantic_unsat.txt",
-        "refinement_semantic_multi": "prompts/9_refinement_semantic_multi.txt",
-    }
+    puzzle_pipeline.path_prompt = PROMPT_PATHS
     prefix = "vllm_" + args.engine + "_"
     puzzle_pipeline.path_cache = {
         k: f"caches/{prefix}{k}.json" for k in puzzle_pipeline.path_prompt
@@ -264,12 +261,12 @@ if __name__ == "__main__":
     parser.add_argument("--num", default=-1, type=int)
     parser.add_argument(
         "--engine",
-        default="qwen3-30b-local",
+        default=DEFAULT_ENGINE,
         type=str,
         help="engine label used for cache file naming",
     )
-    parser.add_argument("--temperature", default=0.7, type=float)
-    parser.add_argument("--max_tokens", default=1500, type=int)
+    parser.add_argument("--temperature", default=TEMPERATURE, type=float)
+    parser.add_argument("--max_tokens", default=MAX_TOKENS, type=int)
     parser.add_argument("--debug", default=False, action="store_true")
     args = parser.parse_args()
     main(args)
