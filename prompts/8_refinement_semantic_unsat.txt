@@ -17,6 +17,11 @@ The following ASP program is syntactically valid but produces no answer sets (un
 ASP code (with line numbers):
 <ASP_CODE>
 
-Revise the integrity constraints to make the program satisfiable with exactly one answer set. Focus on fixing the integrity constraints; assume the search space generation is mostly correct. Return the FULL corrected ASP code below. In your response, include a SINGLE ASP code-block with the rules - it will be automatically parsed from your response.
+Rules:
+- Revise the integrity constraints to make the program satisfiable with exactly one answer set.
+- Focus on fixing the integrity constraints; assume the search space generation is mostly correct.
+- You MUST make changes to the code — do not return the same program you received.
+- Return the FULL corrected ASP code.
+- Include a SINGLE ASP code-block in your response — it will be automatically parsed.
 
 Corrected ASP code:

@@ -22,6 +22,10 @@ ASP code (with line numbers):
 Syntax errors:
 <ERRORS>
 
-Focus on fixing only the identified syntax errors — do not change the meaning of any rule. Return the FULL corrected ASP code below. In your response, include a SINGLE ASP code-block with the rules - it will be automatically parsed from your response.
+Rules:
+- Fix only the identified syntax errors — do not change the meaning of any rule.
+- You MUST make changes to the code — do not return the same program you received.
+- Return the FULL corrected ASP code.
+- Include a SINGLE ASP code-block in your response — it will be automatically parsed.
 
 Corrected ASP code:
