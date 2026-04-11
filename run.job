@@ -32,6 +32,7 @@ python3 main.py \
     --dataset_name train \
     --num 3 \
     --engine qwen3-30b-local \
+    --seed "${RUN_SEED:-132}" \
 
 # Stop monitor and print hardware report
 kill "$MONITOR_PID" 2>/dev/null
