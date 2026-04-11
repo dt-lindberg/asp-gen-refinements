@@ -29,7 +29,7 @@ export VLLM_ENABLE_V1_MULTIPROCESSING=0
 python3 main.py \
     --debug \
     --dataset_name train \
-    --num -1 \
+    --num 3 \
     --engine qwen3-30b-local \
     --seed "${RUN_SEED:-132}" \
 
