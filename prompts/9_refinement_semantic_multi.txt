@@ -1,12 +1,22 @@
+Puzzle description:
+<STORY>
+
+Constraints:
+<CONSTRAINTS>
+
+Constants:
+<CONSTANTS>
+
+Predicates:
+<PREDICATES>
+
 The following ASP program is syntactically valid but produces <NUM_ANSWER_SETS> answer sets instead of exactly 1. Some assignments are not uniquely determined by the constraints.
 
 <SEMANTIC_FEEDBACK>
 
-In most cases it is the integrity constraints (rules beginning with :-) that must be tightened, not the search space (choice rules and facts).
-
-ASP code:
+ASP code (with line numbers):
 <ASP_CODE>
 
-Add or tighten integrity constraints to eliminate the ambiguity and produce exactly one answer set. Return the FULL corrected ASP code below. In your response, include a SINGLE ASP code-block with the rules - it will be automatically parsed from your response.
+Add or tighten integrity constraints to eliminate the ambiguity and produce exactly one answer set. Focus on fixing the integrity constraints; assume the search space generation is mostly correct. Return the FULL corrected ASP code below. In your response, include a SINGLE ASP code-block with the rules - it will be automatically parsed from your response.
 
 Corrected ASP code:

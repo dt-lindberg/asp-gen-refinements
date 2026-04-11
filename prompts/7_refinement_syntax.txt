@@ -1,6 +1,18 @@
+Puzzle description:
+<STORY>
+
+Constraints:
+<CONSTRAINTS>
+
+Constants:
+<CONSTANTS>
+
+Predicates:
+<PREDICATES>
+
 There are syntactical mistakes in the following ASP code.
 
-IMPORTANT: Clingo's reported line numbers are approximate. Due to parser cascades, the actual error may be several lines away from the reported location. Treat each reported location as a hint and scan the surrounding lines for structural issues (e.g. unsupported operators, malformed aggregates, missing punctuation).
+IMPORTANT: Clingo's reported line numbers are approximate. Due to parser cascades, the actual error may be several lines away from the reported location.
 
 ASP code (with line numbers):
 <ASP_CODE>
@@ -8,9 +20,6 @@ ASP code (with line numbers):
 Syntax errors:
 <ERRORS>
 
-Code around reported error locations (+/-10 lines):
-<ERROR_CONTEXT>
-
-Rewrite the FULL corrected ASP code below. Only address the syntax errors — do not change the meaning of any rule. In your response, include a SINGLE ASP code-block with the rules - it will be automatically parsed from your response.
+Focus on fixing only the identified syntax errors — do not change the meaning of any rule. Return the FULL corrected ASP code below. In your response, include a SINGLE ASP code-block with the rules - it will be automatically parsed from your response.
 
 Corrected ASP code:

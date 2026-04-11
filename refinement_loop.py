@@ -1,5 +1,4 @@
 import os
-import re
 import time
 
 from logger import setup_logging, get_logger
@@ -10,35 +9,9 @@ setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
 logger = get_logger(__name__)
 
 
-def _parse_error_lines(errors):
-    """Extract reported line numbers from Clingo error messages."""
-    lines = set()
-    for msg in errors:
-        m = re.search(r"<block>:(\d+):", msg)
-        if m:
-            lines.add(int(m.group(1)))
-    return sorted(lines)
-
-
 def _annotate_with_line_numbers(code):
     """Prefix each line with its 1-based line number."""
     return "\n".join(f"{i + 1:4}: {line}" for i, line in enumerate(code.splitlines()))
-
-
-def _build_error_context(code, line_numbers, window=10):
-    """Extract a windowed view around each reported error line."""
-    lines = code.splitlines()
-    n = len(lines)
-    sections = []
-    for ln in line_numbers:
-        lo = max(0, ln - 1 - window)
-        hi = min(n, ln + window)
-        block = "\n".join(
-            f"{i + 1:4}{'>>>' if i + 1 == ln else '   '}: {lines[i]}"
-            for i in range(lo, hi)
-        )
-        sections.append(f"--- Reported error at line {ln} ---\n{block}")
-    return "\n\n".join(sections) if sections else "(no line numbers parsed from errors)"
 
 
 def _build_semantic_feedback_multi(answer_sets, max_sets_shown=3):
@@ -104,22 +77,16 @@ def refinement_loop_batch(replaces, pipeline, statuses, asets_or_errs_list):
         # Update replace dicts and determine prompt kind for each active puzzle
         kind_map = {}
         for i in active:
+            replaces[i]["<ASP_CODE>"] = _annotate_with_line_numbers(replaces[i]["<ASP_CODE>"])
             if statuses[i] is RuntimeError:
-                errors = [x[1] for x in asets_or_errs[i]]
-                errors_str = "\n".join(errors)
-                replaces[i]["<ERRORS>"] = errors_str
-                clean_code = replaces[i]["<ASP_CODE>"]
-                error_lines = _parse_error_lines(errors)
-                replaces[i]["<ASP_CODE>"] = _annotate_with_line_numbers(clean_code)
-                replaces[i]["<ERROR_CONTEXT>"] = _build_error_context(clean_code, error_lines)
+                replaces[i]["<ERRORS>"] = "\n".join(x[1] for x in asets_or_errs[i])
                 kind_map[i] = "refinement_syntax"
             elif statuses[i] is None:
                 n_sets = len(asets_or_errs[i])
                 if n_sets == 0:
                     kind_map[i] = "refinement_semantic_unsat"
                 else:
-                    feedback = _build_semantic_feedback_multi(asets_or_errs[i])
-                    replaces[i]["<SEMANTIC_FEEDBACK>"] = feedback
+                    replaces[i]["<SEMANTIC_FEEDBACK>"] = _build_semantic_feedback_multi(asets_or_errs[i])
                     replaces[i]["<NUM_ANSWER_SETS>"] = str(n_sets)
                     kind_map[i] = "refinement_semantic_multi"
             else:
