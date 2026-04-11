@@ -22,7 +22,7 @@ THINKING = False
 # TOP_K:                    only the top-K most likely tokens are considered per step
 # MIN_P:                    minimum probability relative to top token to be considered
 MAX_TOKENS = 1500
-MAX_MODEL_LEN = 9800
+MAX_MODEL_LEN = 16000
 MAX_NUM_BATCHED_TOKENS = 8192
 MAX_NUM_SEQS = 25
 TEMPERATURE = 0.7
@@ -41,7 +41,7 @@ CLINGO_TIMEOUT = 30.0
 # MAX_ATTEMPTS:                      number of refinement iterations
 # SEVERELY_UNDERCONSTRAINED_THRESHOLD: programs with more answer sets than this get a simplified message
 # MAX_VARIABLE_ATOMS:                limit variable atoms shown in semantic feedback
-MAX_ATTEMPTS = 6
+MAX_ATTEMPTS = 2
 SEVERELY_UNDERCONSTRAINED_THRESHOLD = 1000
 MAX_VARIABLE_ATOMS = 30
 
