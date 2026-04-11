@@ -41,7 +41,7 @@ CLINGO_TIMEOUT = 30.0
 # MAX_ATTEMPTS:                      number of refinement iterations
 # SEVERELY_UNDERCONSTRAINED_THRESHOLD: programs with more answer sets than this get a simplified message
 # MAX_VARIABLE_ATOMS:                limit variable atoms shown in semantic feedback
-MAX_ATTEMPTS = 2
+MAX_ATTEMPTS = 6
 SEVERELY_UNDERCONSTRAINED_THRESHOLD = 1000
 MAX_VARIABLE_ATOMS = 30
 
