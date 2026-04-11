@@ -5,6 +5,6 @@ exactly one answer set representing the unique solution.
 
 ===SEPARATOR===
 
-Write a NEW complete ASP program that solves this puzzle. Do not patch a previous
-attempt — write a fresh solution that avoids the issues identified in the feedback.
-Include a SINGLE ASP code-block with the rules.
+Given the puzzle and its constraints, previous attempts and their feedback, write a complete ASP program that solves the puzzle. Make sure to avoid the mistakes made in prior attempts. In your response, include a SINGLE ASP code-block - it will be automatically parsed from your response.
+
+Corrected ASP code:

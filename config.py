@@ -42,7 +42,7 @@ CLINGO_TIMEOUT = 30.0
 # SEVERELY_UNDERCONSTRAINED_THRESHOLD:
 # Programs with more answer sets than this get a simplified "severely underconstrained" message
 # MAX_VARIABLE_ATOMS: Limit variable atoms shown in semantic feedback to keep prompts manageable
-MAX_ATTEMPTS = 1
+MAX_ATTEMPTS = 2
 SEVERELY_UNDERCONSTRAINED_THRESHOLD = 1000
 MAX_VARIABLE_ATOMS = 30
 

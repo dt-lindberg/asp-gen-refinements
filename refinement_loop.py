@@ -104,7 +104,7 @@ def _build_attempt_prompt(puzzle_data_i, history, system_prompt, instruction):
         n = idx + 1
         parts.append(f"<attempt_{n}>")
         parts.append("```asp")
-        parts.append(code)
+        parts.append(_annotate_with_line_numbers(code))
         parts.append("```")
         parts.append("")
         parts.append("<feedback>")
