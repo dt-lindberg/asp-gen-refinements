@@ -17,6 +17,7 @@ from config import (
     TEMPERATURE,
     MAX_TOKENS,
     PROMPT_PATHS,
+    SEED,
 )
 
 load_dotenv()
@@ -30,10 +31,12 @@ def main(args):
 
     puzzle_pipeline = Pipeline(vars(args))
     puzzle_pipeline.path_prompt = PROMPT_PATHS
-    prefix = "vllm_" + args.engine + "_"
+    seed_str = f"{args.seed:06d}"
+    prefix = f"vllm_{args.engine}_seed{seed_str}_"
     puzzle_pipeline.path_cache = {
         k: f"caches/{prefix}{k}.json" for k in puzzle_pipeline.path_prompt
     }
+    puzzle_pipeline.path_mistakes = f"mistakes/mistakes_seed{seed_str}.xlsx"
     logger.debug(f"Pipeline cache paths: {puzzle_pipeline.path_cache}")
 
     puzzle_pipeline.load_prompt()
@@ -267,6 +270,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--temperature", default=TEMPERATURE, type=float)
     parser.add_argument("--max_tokens", default=MAX_TOKENS, type=int)
+    parser.add_argument("--seed", default=SEED, type=int)
     parser.add_argument("--debug", default=False, action="store_true")
     args = parser.parse_args()
     main(args)

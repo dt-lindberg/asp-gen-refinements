@@ -52,10 +52,10 @@ class Pipeline:
         if self._vllm_engine is None:
             from vllm_engine import VLLMEngine
 
-            self._vllm_engine = VLLMEngine(
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-            )
+            kwargs = dict(max_tokens=self.max_tokens, temperature=self.temperature)
+            if hasattr(self, "seed") and self.seed is not None:
+                kwargs["seed"] = self.seed
+            self._vllm_engine = VLLMEngine(**kwargs)
         return self._vllm_engine
 
     def load_prompt(self):
