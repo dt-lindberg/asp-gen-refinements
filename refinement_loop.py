@@ -117,7 +117,7 @@ def _build_attempt_prompt(puzzle_data_i, history, system_prompt, instruction):
     return "\n".join(parts)
 
 
-def multi_attempt_batch(puzzle_data, pipeline, statuses, asets_or_errs_list):
+def multi_attempt_batch(puzzle_data, pipeline, statuses, asets_or_errs_list, *, audit):
     """Multi-attempt one-shot loop over all puzzles.
 
     Args:
@@ -125,6 +125,7 @@ def multi_attempt_batch(puzzle_data, pipeline, statuses, asets_or_errs_list):
         pipeline: Pipeline instance.
         statuses: list of initial Clingo statuses (None or RuntimeError).
         asets_or_errs_list: list of initial answer_sets_or_errors.
+        audit: AuditLog instance to record each refinement.
 
     Returns:
         list of (None, status, answer_sets, attempt_data) for each puzzle,
@@ -160,11 +161,11 @@ def multi_attempt_batch(puzzle_data, pipeline, statuses, asets_or_errs_list):
                 history.append((code, clingo_errors))
             prompts.append(_build_attempt_prompt(puzzle_data[i], history, system_prompt, instruction))
 
-        responses = pipeline.gen_response_raw_batch("reattempt", prompts)
+        batch = pipeline.gen_response_raw_batch("reattempt", prompts)
 
         # Run Clingo for each active puzzle and record results
-        for i, resp in zip(active, responses):
-            rules_all = extract_code_blocks(resp)
+        for i, (prompt, thinking, response) in zip(active, batch):
+            rules_all = extract_code_blocks(response)
 
             t0 = time.time()
             status, asets_or_err = pipeline.gen_answer_set(rules_all)
@@ -180,6 +181,26 @@ def multi_attempt_batch(puzzle_data, pipeline, statuses, asets_or_errs_list):
 
             if status is None and len(asets_or_err) == 1:
                 done[i] = True
+
+            audit.record_refinement(
+                puzzle_data[i]["puzzle_id"],
+                trigger="reattempt",
+                prompt=prompt,
+                thinking=thinking,
+                response=response,
+                extracted=rules_all,
+                clingo={
+                    "status": "ok" if status is None else "error",
+                    "answer_sets_count": answer_sets_count,
+                    "clingo_time": clingo_time,
+                    "clingo_errors": clingo_errors,
+                    "answer_sets_sample": (
+                        [list(s) for s in asets_or_err[:5]]
+                        if status is None
+                        else []
+                    ),
+                },
+            )
 
     n_solved = sum(done)
     logger.info(f"Multi-attempt complete: {n_solved}/{n} puzzles solved")

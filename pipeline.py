@@ -1,9 +1,6 @@
-import json
 import os
 import threading
-import pandas as pd
 
-from time import strftime
 from clingo.control import Control
 from clingo.symbol import parse_term
 
@@ -38,12 +35,7 @@ class Pipeline:
         self.max_tokens = MAX_TOKENS
         self.path_prompt = {}
         self.prompt = {}
-        self.path_cache = {}
-        self.cache = {}
         self._vllm_engine = None
-        os.makedirs("mistakes", exist_ok=True)
-        self.path_mistakes = f"mistakes/mistakes_{strftime('%m%d_%H%M%S')}.xlsx"
-        self.mistakes = []
 
         for k, v in args.items():
             setattr(self, k, v)
@@ -63,29 +55,14 @@ class Pipeline:
             with open(self.path_prompt[kind], "r", encoding="utf-8") as f:
                 self.prompt[kind] = f.read().strip()
 
-    def load_cache(self):
-        for kind in self.path_cache:
-            if os.path.isfile(self.path_cache[kind]):
-                with open(self.path_cache[kind], "r") as f:
-                    self.cache[kind] = json.load(f)
-            else:
-                self.cache[kind] = {}
-
-    def save_cache(self):
-        os.makedirs("caches", exist_ok=True)
-        for kind in self.path_cache:
-            with open(self.path_cache[kind], "w") as f:
-                json.dump(self.cache[kind], f)
-
     def gen_response_batch(self, kind, replaces):
         """Generate responses for a batch of puzzles.
 
-        Args:
-            kind: prompt kind string.
-            replaces: list of replace dicts (one per puzzle).
-
         Returns:
-            list of response text strings.
+            list of (prompt, thinking, response) tuples — one per puzzle.
+            `prompt` is the final substituted user message string, `thinking`
+            is extracted from <think>...</think> blocks (empty when THINKING
+            is off), and `response` is the raw text with thinking stripped.
         """
         prompts = []
         for replace in replaces:
@@ -94,44 +71,41 @@ class Pipeline:
                 prompt = prompt.replace(k, v)
             prompts.append(prompt)
 
-        responses = [None] * len(prompts)
-        miss_indices = []
-        miss_messages = []
+        messages_list = [[{"role": "user", "content": p}] for p in prompts]
+        generated = self._get_engine().generate_batch(messages_list)
+        return [
+            (prompts[i], thinking, response)
+            for i, (thinking, response) in enumerate(generated)
+        ]
 
-        for i, prompt in enumerate(prompts):
-            if prompt in self.cache[kind]:
-                responses[i] = self.cache[kind][prompt]
-            else:
-                miss_indices.append(i)
-                miss_messages.append([{"role": "user", "content": prompt}])
+    def gen_response_raw_batch(self, kind, prompts):
+        """Generate responses for pre-built prompt strings.
 
-        if miss_messages:
-            generated = self._get_engine().generate_batch(miss_messages)
-            for idx, resp in zip(miss_indices, generated):
-                self.cache[kind][prompts[idx]] = resp
-                responses[idx] = resp
-            self.save_cache()
-
-        return responses
+        Returns:
+            list of (prompt, thinking, response) tuples — one per prompt.
+        """
+        messages_list = [[{"role": "user", "content": p}] for p in prompts]
+        generated = self._get_engine().generate_batch(messages_list)
+        return [
+            (prompts[i], thinking, response)
+            for i, (thinking, response) in enumerate(generated)
+        ]
 
     def gen_response_constraints_batch(self, kind, replaces):
         """Generate constraint responses for a batch of puzzles (multi-turn format).
 
-        Args:
-            kind: prompt kind string.
-            replaces: list of replace dicts (one per puzzle).
-
         Returns:
-            list of response text strings.
+            list of (prompt, thinking, response) tuples — one per puzzle.
+            For this multi-turn step `prompt` is the full list of role/content
+            message dicts that were sent to the LLM (including the in-context
+            examples, which never carry thinking tokens).
         """
-        prompts = []
         messages_list = []
 
         for replace in replaces:
             prompt = self.prompt[kind]
             for k, v in replace.items():
                 prompt = prompt.replace(k, v)
-            prompts.append(prompt)
 
             general, ex1, ex2, ex3 = prompt.split("\n\nProblem ")
             ex1, response1 = ex1.split("\n\nConstraints:\n")
@@ -151,55 +125,11 @@ class Pipeline:
             ]
             messages_list.append(messages)
 
-        responses = [None] * len(prompts)
-        miss_indices = []
-        miss_messages = []
-
-        for i, prompt in enumerate(prompts):
-            if prompt in self.cache[kind]:
-                responses[i] = self.cache[kind][prompt]
-            else:
-                miss_indices.append(i)
-                miss_messages.append(messages_list[i])
-
-        if miss_messages:
-            generated = self._get_engine().generate_batch(miss_messages)
-            for idx, resp in zip(miss_indices, generated):
-                self.cache[kind][prompts[idx]] = resp
-                responses[idx] = resp
-            self.save_cache()
-
-        return responses
-
-    def gen_response_raw_batch(self, kind, prompts):
-        """Generate responses for pre-built prompt strings."""
-        responses = [None] * len(prompts)
-        miss_indices = []
-        miss_messages = []
-
-        for i, prompt in enumerate(prompts):
-            if prompt in self.cache[kind]:
-                responses[i] = self.cache[kind][prompt]
-            else:
-                miss_indices.append(i)
-                miss_messages.append([{"role": "user", "content": prompt}])
-
-        if miss_messages:
-            generated = self._get_engine().generate_batch(miss_messages)
-            for idx, resp in zip(miss_indices, generated):
-                self.cache[kind][prompts[idx]] = resp
-                responses[idx] = resp
-            self.save_cache()
-
-        return responses
-
-    def gen_response(self, kind, replace):
-        """Single-puzzle convenience wrapper around gen_response_batch."""
-        return self.gen_response_batch(kind, [replace])[0]
-
-    def gen_response_constraints(self, kind, replace):
-        """Single-puzzle convenience wrapper around gen_response_constraints_batch."""
-        return self.gen_response_constraints_batch(kind, [replace])[0]
+        generated = self._get_engine().generate_batch(messages_list)
+        return [
+            (messages_list[i], thinking, response)
+            for i, (thinking, response) in enumerate(generated)
+        ]
 
     def gen_answer_set(self, program, opt=False):
         """Run Clingo to find answer sets.
@@ -288,15 +218,3 @@ class Pipeline:
 
         models = [[str(atom) for atom in model] for model in models]
         return None, models
-
-    def get_reasoning(self, kind, replace):
-        """Returns empty string — reasoning traces not available for local vLLM backend."""
-        return ""
-
-    def save_mistakes(self, mistake_cols):
-        df = pd.DataFrame(self.mistakes, columns=mistake_cols)
-        writer = pd.ExcelWriter(self.path_mistakes)
-        df.to_excel(writer, sheet_name="results")
-        for col_idx in range(2, 10):
-            writer.sheets["results"].set_column(col_idx, col_idx, 40)
-        writer.close()
