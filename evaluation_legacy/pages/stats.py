@@ -1,32 +1,50 @@
-"""Evaluation stats page — aggregate metrics over an audit run."""
+"""
+Evaluation stats page — aggregate metrics over a full mistakes file.
+
+* Reads the selected mistakes file from st.session_state["mistakes_file"]
+* File selection is handled by app.py sidebar
+"""
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 
-from evaluation.eval_metrics import (
+from evaluation_legacy.eval_metrics import (
+    MAX_ATTEMPTS,
     actual_max_attempt,
     attempt_distribution,
     avg_program_lengths,
     count_correct,
     detect_hardcoded,
     error_distribution,
+    load_data,
     program_length_by_outcome,
 )
 
+# ---------------------------------------------------------------------------
+# Page entry point
+# ---------------------------------------------------------------------------
+
 
 def main():
-    records = st.session_state.get("audit_records") or []
-    if not records:
-        st.info("Select an audit run from the sidebar to get started.")
+    file_path = st.session_state.get("mistakes_file")
+    if not file_path:
+        st.info("Select a mistakes file from the sidebar to get started.")
         return
 
-    run_name = st.session_state.get("audit_run_name", "")
-    st.caption(f"Run: `{run_name}`")
+    try:
+        df = load_data(file_path)
+    except Exception as e:
+        st.error(f"Failed to load {file_path}: {e}")
+        return
 
-    n_total = len(records)
-    n_correct, correct_ids = count_correct(records)
-    hardcoded = detect_hardcoded(records)
+    n_total = len(df)
+    n_correct, correct_ids = count_correct(df)
+    hardcoded = detect_hardcoded(df)
+
+    # -------------------------------------------------------------------------
+    # Top-level metrics
+    # -------------------------------------------------------------------------
 
     st.subheader("Overview")
     col1, col2, col3, col4 = st.columns(4)
@@ -36,11 +54,12 @@ def main():
     col4.metric("Potentially hardcoded", len(hardcoded))
 
     if correct_ids:
-        st.caption("Correct puzzle IDs: " + ", ".join(correct_ids))
+        st.caption("Correct puzzle IDs: " + ", ".join(str(i + 1) for i in correct_ids))
+
     if hardcoded:
         st.caption(
             "Potentially hardcoded puzzle IDs: "
-            + ", ".join(sorted(hardcoded.keys()))
+            + ", ".join(str(i + 1) for i in sorted(hardcoded.keys()))
         )
 
     st.divider()
@@ -50,18 +69,13 @@ def main():
     # -------------------------------------------------------------------------
 
     st.subheader("Attempts to correct solution")
-    st.caption(
-        "For each correctly solved puzzle: which attempt first yielded exactly 1 "
-        "answer set. Attempt 0 = initial run; attempts ≥ 1 = refinements."
-    )
-    dist = attempt_distribution(records)
-    max_idx = actual_max_attempt(records)
+    st.caption("For each correctly solved puzzle: which attempt first yielded exactly 1 answer set.")
+
+    dist = attempt_distribution(df)
     if dist:
+        max_idx = actual_max_attempt(df)
         attempt_df = pd.DataFrame(
-            [
-                {"Attempt": f"Attempt {i}", "Count": dist.get(i, 0)}
-                for i in range(max_idx + 1)
-            ]
+            [{"Attempt": f"Attempt {i}", "Count": dist.get(i, 0)} for i in range(max_idx + 1)]
         )
         chart = (
             alt.Chart(attempt_df)
@@ -82,19 +96,18 @@ def main():
     # -------------------------------------------------------------------------
 
     st.subheader("Error distribution")
-    st.caption(
-        "Count of each error type across attempts. Use the filter to restrict to "
-        "specific attempt indices."
-    )
-    all_attempt_indices = list(range(max_idx + 1))
+    st.caption("Count of each error type across attempts. Use the filter to restrict to specific attempt indices.")
+
+    all_attempt_indices = list(range(actual_max_attempt(df) + 1))
     selected_attempts = st.multiselect(
         "Filter by attempt index",
         options=all_attempt_indices,
         default=all_attempt_indices,
         format_func=lambda i: f"Attempt {i}",
     )
+
     if selected_attempts:
-        err_dist = error_distribution(records, attempt_filter=set(selected_attempts))
+        err_dist = error_distribution(df, attempt_filter=selected_attempts)
         categories = [
             ("syntax", "Syntax error"),
             ("semantic_unsat", "Semantic unsat\n(0 answer sets)"),
@@ -102,10 +115,7 @@ def main():
             ("correct", "Correct\n(1 answer set)"),
         ]
         err_df = pd.DataFrame(
-            [
-                {"Type": label, "Count": err_dist.get(key, 0)}
-                for key, label in categories
-            ]
+            [{"Type": label, "Count": err_dist.get(key, 0)} for key, label in categories]
         )
         chart = (
             alt.Chart(err_df)
@@ -126,11 +136,9 @@ def main():
     # -------------------------------------------------------------------------
 
     st.subheader("Average program length over attempts")
-    st.caption(
-        "Mean character count of the ASP program at each attempt index (only "
-        "over puzzles that reached that attempt)."
-    )
-    lengths = avg_program_lengths(records)
+    st.caption("Mean character count of the ASP program at each attempt index (only over puzzles that reached that attempt).")
+
+    lengths = avg_program_lengths(df)
     length_rows = [
         {
             "Attempt": f"Attempt {i}",
@@ -139,9 +147,10 @@ def main():
             "lower": round(lengths[i]["mean"] - lengths[i]["std"], 1),
             "upper": round(lengths[i]["mean"] + lengths[i]["std"], 1),
         }
-        for i in range(max_idx + 1)
-        if lengths.get(i) is not None
+        for i in range(actual_max_attempt(df) + 1)
+        if lengths[i] is not None
     ]
+
     if length_rows:
         length_df = pd.DataFrame(length_rows)
         x_enc = alt.X(
@@ -152,11 +161,7 @@ def main():
         band = (
             alt.Chart(length_df)
             .mark_area(opacity=0.25, color="#FF9800")
-            .encode(
-                x=x_enc,
-                y=alt.Y("lower:Q", title="Avg. program length (chars)"),
-                y2="upper:Q",
-            )
+            .encode(x=x_enc, y=alt.Y("lower:Q", title="Avg. program length (chars)"), y2="upper:Q")
         )
         line = (
             alt.Chart(length_df)
@@ -174,15 +179,13 @@ def main():
     st.divider()
 
     # -------------------------------------------------------------------------
-    # Final program length by outcome
+    # Box plot: final program length by outcome
     # -------------------------------------------------------------------------
 
     st.subheader("Final program length by outcome")
-    st.caption(
-        "Distribution of the final ASP program length (chars) split by whether "
-        "the puzzle was solved or not."
-    )
-    outcome_records = program_length_by_outcome(records)
+    st.caption("Distribution of the final ASP program length (chars) split by whether the puzzle was solved or not.")
+
+    outcome_records = program_length_by_outcome(df)
     if outcome_records:
         outcome_df = pd.DataFrame(outcome_records)
         box = (

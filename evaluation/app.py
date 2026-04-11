@@ -1,49 +1,49 @@
-"""
-Entry point for the ASP pipeline Streamlit app.
+"""Entry point for the ASP audit-trail Streamlit app.
 
-* Sidebar handles mistakes file selection (shared across all pages)
-* Pages: Inspector (per-puzzle view) and Evaluation Stats (aggregate metrics)
+* Sidebar selects an audit run directory under `audit/`.
+* Pages: Inspector (per-puzzle view) and Evaluation Stats (aggregate metrics).
 
 Usage:
     streamlit run evaluation/app.py
 """
 
-import glob
 import os
 import sys
 
 import streamlit as st
 
-# Ensure the project root is on the path so pages can import refinement_loop etc.
+# Ensure the project root is on sys.path so pages can import evaluation.*
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-st.set_page_config(page_title="ASP Pipeline", layout="wide")
+from evaluation.data_loader import list_runs, load_run
 
-# ---------------------------------------------------------------------------
-# Sidebar: shared file selector
-# ---------------------------------------------------------------------------
+st.set_page_config(page_title="ASP Pipeline (audit)", layout="wide")
 
-mistakes_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "mistakes")
-available = sorted(glob.glob(os.path.join(mistakes_dir, "*.xlsx")), reverse=True)
-file_labels = [os.path.basename(f) for f in available]
+audit_root = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "audit"
+)
+runs = list_runs(audit_root)
 
 with st.sidebar:
-    st.header("Data")
-    if available:
-        selected_label = st.selectbox("Mistakes file", options=file_labels)
-        st.session_state["mistakes_file"] = available[file_labels.index(selected_label)]
+    st.header("Run")
+    if runs:
+        selected = st.selectbox("Audit run", options=runs)
+        run_dir = os.path.join(audit_root, selected)
+        try:
+            records = load_run(run_dir)
+        except Exception as e:
+            st.error(f"Failed to load run: {e}")
+            records = []
+        st.session_state["audit_records"] = records
+        st.session_state["audit_run_dir"] = run_dir
+        st.session_state["audit_run_name"] = selected
     else:
-        st.warning("No .xlsx files found in mistakes/")
-        st.session_state["mistakes_file"] = None
-
-# ---------------------------------------------------------------------------
-# Navigation
-# ---------------------------------------------------------------------------
+        st.warning(f"No audit runs found under {audit_root}")
+        st.session_state["audit_records"] = []
+        st.session_state["audit_run_name"] = ""
 
 pages = [
     st.Page("pages/inspector.py", title="Inspector"),
     st.Page("pages/stats.py", title="Evaluation Stats"),
 ]
-
-pg = st.navigation(pages)
-pg.run()
+st.navigation(pages).run()

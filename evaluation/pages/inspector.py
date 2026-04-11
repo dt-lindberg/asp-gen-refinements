@@ -1,115 +1,57 @@
-"""
-Inspector page — interactive per-puzzle view of ASP pipeline results.
+"""Inspector page — per-puzzle view of the audit trail.
 
-* Reads the selected mistakes file from st.session_state["mistakes_file"]
-* File selection is handled by app.py sidebar
+Reads `audit_records` from `st.session_state` (populated by app.py).
+Shows, for each LLM step and each refinement attempt, the full prompt,
+thinking (when present), raw response, extracted output, and Clingo
+outcome. Refinements show an inline diff against the previous program.
 """
 
 import difflib
 import re
 
-import pandas as pd
 import streamlit as st
 
-from evaluation.eval_metrics import load_data, MAX_ATTEMPTS
-
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
-STEP_LABELS = {
-    "constants_formatted": ("Step 2", "Format Constants"),
-    "predicates": ("Step 3", "Generate Predicates"),
-    "rules_search_space": ("Step 4", "Generate Search Space"),
-    "constraints_paraphrased": ("Step 5", "Paraphrase Constraints"),
-    "rules_constraints": ("Step 6", "Generate Constraint Rules"),
-}
-
-REASONING_COLS = {
-    "constants_formatted": "reasoning_constants",
-    "predicates": "reasoning_predicates",
-    "rules_search_space": "reasoning_search_space",
-    "constraints_paraphrased": "reasoning_paraphrasing",
-    "rules_constraints": "reasoning_constraints",
-}
-
-STEP_INPUTS = {
-    "constants_formatted": ["story", "constants"],
-    "predicates": ["story", "constants_formatted"],
-    "rules_search_space": ["constants_formatted", "predicates"],
-    "constraints_paraphrased": ["story", "constraints"],
-    "rules_constraints": [
-        "constraints_paraphrased",
-        "constants_formatted",
-        "predicates",
-    ],
-}
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+from evaluation.eval_metrics import is_solved
 
 
-def cell(row: pd.Series, col: str) -> str:
-    val = row.get(col, "")
-    if pd.isna(val):
-        return ""
-    return str(val).strip()
-
-
-def is_correct(row: pd.Series) -> bool:
-    pred = cell(row, "prediction")
-    return bool(pred) and not re.match(r"\d+ answer sets", pred)
-
-
-def puzzle_label(idx: int, row: pd.Series) -> str:
-    pred = cell(row, "prediction")
-    if is_correct(row):
-        return f"Puzzle {idx + 1} — correct"
-    elif not pred:
-        return f"Puzzle {idx + 1} — no answer set"
-    else:
-        return f"Puzzle {idx + 1} — {pred}"
-
+STEP_ORDER = [
+    ("constants_formatting", "Step 2", "Format Constants"),
+    ("predicates", "Step 3", "Generate Predicates"),
+    ("search_space", "Step 4", "Generate Search Space"),
+    ("paraphrasing", "Step 5", "Paraphrase Constraints"),
+    ("constraints", "Step 6", "Generate Constraint Rules"),
+]
 
 _text_block_counter = 0
 _puzzle_index = 0
 
 
-def show_text_block(label: str, text: str, height: int = 200):
+def _puzzle_label(idx, rec):
+    pid = rec.get("puzzle_id", str(idx))
+    final = rec.get("final") or {}
+    pred = final.get("prediction", "") or ""
+    if final.get("solved"):
+        return f"Puzzle {pid} — correct"
+    if not pred:
+        return f"Puzzle {pid} — no answer set"
+    return f"Puzzle {pid} — {pred}"
+
+
+def _text_block(label, text, height=200):
     global _text_block_counter
     _text_block_counter += 1
     st.text_area(
         label,
-        value=text,
+        value=text or "",
         height=height,
         disabled=True,
         key=f"p{_puzzle_index}_tb_{_text_block_counter}",
     )
 
 
-def show_step(step_col: str, row: pd.Series):
-    step_id, step_name = STEP_LABELS[step_col]
-    output = cell(row, step_col)
-    reasoning = cell(row, REASONING_COLS.get(step_col, ""))
-    inputs = STEP_INPUTS.get(step_col, [])
-
-    with st.expander(f"{step_id}: {step_name}", expanded=False):
-        if inputs:
-            st.markdown("**Input**")
-            for inp in inputs:
-                show_text_block(inp, cell(row, inp), height=120)
-
-        st.markdown("**Output**")
-        show_text_block(step_col, output, height=180)
-
-        if reasoning:
-            st.markdown("**Reasoning**")
-            show_text_block("reasoning", reasoning, height=200)
-
-
-def parse_error_lines(errors_str: str) -> set[int]:
-    """Extract line numbers from Clingo error messages like '<block>:88:20-21: error: ...'"""
+def _parse_error_lines(errors_str):
+    if not errors_str:
+        return set()
     return {int(m) for m in re.findall(r"<block>:(\d+):", errors_str)}
 
 
@@ -120,12 +62,13 @@ _CODE_DIV = (
 )
 
 
-def show_code_block(code: str, error_lines: set[int] = None):
-    """Render a code block with optional warning markers on error lines."""
+def _render_code_block(code, error_lines=None):
     error_lines = error_lines or set()
     rows = []
-    for line_num, line in enumerate(code.splitlines(), start=1):
-        escaped = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    for line_num, line in enumerate((code or "").splitlines(), start=1):
+        escaped = (
+            line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        )
         warn = (
             '<span style="color:#ffaa00;user-select:none;">&#9888;</span>'
             if line_num in error_lines
@@ -144,31 +87,10 @@ def show_code_block(code: str, error_lines: set[int] = None):
     st.html(html)
 
 
-def show_step7(row: pd.Series):
-    rules_0 = cell(row, "attempt_0")
-    clingo_time = cell(row, "clingo_time_0")
-    clingo_errors = cell(row, "clingo_errors_0")
-    n_sets = cell(row, "#answer_sets_0")
-
-    with st.expander("Step 7: Compile & Solve (Clingo)", expanded=False):
-        st.markdown("**Combined ASP Program**")
-        show_code_block(rules_0, error_lines=parse_error_lines(clingo_errors))
-
-        cols = st.columns(2)
-        with cols[0]:
-            st.metric("Clingo time (s)", clingo_time if clingo_time else "—")
-        with cols[1]:
-            st.metric("Answer sets", n_sets)
-
-        if clingo_errors:
-            st.markdown("**Clingo Feedback**")
-            show_text_block("errors", clingo_errors, height=120)
-
-
-def show_inline_diff(before: str, after: str, error_lines: set[int] = None):
+def _render_inline_diff(before, after, error_lines=None):
     error_lines = error_lines or set()
-    before_lines = before.splitlines()
-    after_lines = after.splitlines()
+    before_lines = (before or "").splitlines()
+    after_lines = (after or "").splitlines()
     diff = list(difflib.ndiff(before_lines, after_lines))
 
     rows = []
@@ -178,7 +100,9 @@ def show_inline_diff(before: str, after: str, error_lines: set[int] = None):
         content = entry[2:]
         if tag == "? ":
             continue
-        escaped = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        escaped = (
+            content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        )
         if tag == "  ":
             bg, marker = "transparent", " "
             line_num += 1
@@ -199,7 +123,6 @@ def show_inline_diff(before: str, after: str, error_lines: set[int] = None):
             f'<span><span style="color:#aaa;user-select:none;margin-right:10px;">{line_num:>3} {marker}</span>{escaped}</span>'
             f"{warn}</div>"
         )
-
     html = (
         '<div style="overflow-x:auto;border:1px solid #ddd;border-radius:4px;padding:4px 0">'
         + "".join(rows)
@@ -208,116 +131,208 @@ def show_inline_diff(before: str, after: str, error_lines: set[int] = None):
     st.html(html)
 
 
-def show_step8(row: pd.Series):
-    # Detect max attempt from the row's own keys rather than trusting MAX_ATTEMPTS
-    max_attempt = max(
-        (int(k.split("_")[1]) for k in row.index if re.match(r"^attempt_\d+$", str(k))),
-        default=0,
-    )
-    attempts = [
-        (
-            cell(row, f"attempt_{i}"),
-            cell(row, f"#answer_sets_{i}"),
-            cell(row, f"clingo_time_{i}"),
-            cell(row, f"clingo_errors_{i}"),
+def _prompt_as_text(prompt):
+    """Render either a string or a list of {role, content} dicts as plain text."""
+    if isinstance(prompt, list):
+        parts = []
+        for msg in prompt:
+            role = msg.get("role", "?").upper()
+            parts.append(f"[{role}]\n{msg.get('content', '')}")
+        return "\n\n".join(parts)
+    return str(prompt or "")
+
+
+def _render_step(step_key, step_id, step_name, step_data):
+    if not step_data:
+        return
+    with st.expander(f"{step_id}: {step_name}", expanded=False):
+        st.markdown("**Prompt**")
+        _text_block(
+            f"{step_key}_prompt", _prompt_as_text(step_data.get("prompt")), height=220
         )
-        for i in range(1, max_attempt + 1)
-    ]
-    active = [(i, *data) for i, data in enumerate(attempts, 1) if any(data)]
-    if not active:
+
+        thinking = step_data.get("thinking") or ""
+        if thinking:
+            st.markdown("**Thinking**")
+            _text_block(f"{step_key}_thinking", thinking, height=220)
+
+        st.markdown("**Response (raw)**")
+        _text_block(f"{step_key}_response", step_data.get("response", ""), height=220)
+
+        st.markdown("**Extracted**")
+        _text_block(f"{step_key}_extracted", step_data.get("extracted", ""), height=220)
+
+
+def _render_answer_set_sample(label_prefix, sample):
+    if not sample:
+        return
+    text = "\n\n".join(
+        f"Answer set {i + 1}:\n" + "\n".join(sorted(str(a) for a in s))
+        for i, s in enumerate(sample)
+    )
+    _text_block(f"{label_prefix}_sample", text, height=160)
+
+
+def _render_initial_run(rec):
+    init = rec.get("initial_run") or {}
+    if not init:
+        return
+    with st.expander("Step 7: Compile & Solve (Clingo)", expanded=False):
+        st.markdown("**Combined ASP Program**")
+        _render_code_block(
+            init.get("asp_program", ""),
+            error_lines=_parse_error_lines(init.get("clingo_errors", "")),
+        )
+        cols = st.columns(3)
+        cols[0].metric("Clingo status", init.get("status", "?"))
+        cols[1].metric("Answer sets", init.get("answer_sets_count", 0))
+        cols[2].metric("Clingo time (s)", init.get("clingo_time", "—"))
+        if init.get("clingo_errors"):
+            st.markdown("**Clingo feedback**")
+            _text_block("init_errors", init["clingo_errors"], height=120)
+        sample = init.get("answer_sets_sample") or []
+        if sample:
+            st.markdown("**Answer set sample**")
+            _render_answer_set_sample("init", sample)
+
+
+def _render_refinements(rec):
+    refs = rec.get("refinements") or []
+    if not refs:
         return
 
-    all_codes = [cell(row, f"attempt_{i}") for i in range(max_attempt + 1)]
+    init = rec.get("initial_run") or {}
+    prev_program = init.get("asp_program", "") or ""
+    prev_errors = init.get("clingo_errors", "") or ""
 
-    with st.expander(f"Step 8: Refinement ({len(active)} attempt(s))", expanded=False):
-        for i, code, n_sets, clingo_time, clingo_errors in active:
-            st.markdown(f"**Attempt {i}**")
-            trigger_errors = cell(row, f"clingo_errors_{i - 1}")
-            if trigger_errors:
-                show_text_block(
-                    f"Feedback triggering attempt {i}", trigger_errors, height=100
+    with st.expander(f"Step 8: Refinement ({len(refs)} attempt(s))", expanded=False):
+        for i, ref in enumerate(refs, start=1):
+            trigger = ref.get("trigger", "?")
+            st.markdown(f"### Attempt {i} — trigger: `{trigger}`")
+
+            if prev_errors:
+                st.markdown("**Feedback that triggered this attempt**")
+                _text_block(f"ref_{i}_trigger_feedback", prev_errors, height=100)
+
+            st.markdown("**Prompt**")
+            _text_block(
+                f"ref_{i}_prompt", _prompt_as_text(ref.get("prompt")), height=240
+            )
+
+            thinking = ref.get("thinking") or ""
+            if thinking:
+                st.markdown("**Thinking**")
+                _text_block(f"ref_{i}_thinking", thinking, height=220)
+
+            st.markdown("**Response (raw)**")
+            _text_block(f"ref_{i}_response", ref.get("response", ""), height=220)
+
+            code = ref.get("extracted", "") or ""
+            clingo = ref.get("clingo") or {}
+            new_errors = clingo.get("clingo_errors", "") or ""
+
+            if code and prev_program and code != prev_program:
+                st.markdown("**Diff vs previous program**")
+                _render_inline_diff(
+                    prev_program,
+                    code,
+                    error_lines=_parse_error_lines(prev_errors),
                 )
+            elif code:
+                st.markdown("**Extracted program**")
+                _render_code_block(
+                    code, error_lines=_parse_error_lines(new_errors)
+                )
+
+            cols = st.columns(3)
+            cols[0].metric("Clingo status", clingo.get("status", "?"))
+            cols[1].metric("Answer sets", clingo.get("answer_sets_count", 0))
+            cols[2].metric("Clingo time (s)", clingo.get("clingo_time", "—"))
+            if new_errors:
+                st.markdown("**Clingo feedback**")
+                _text_block(f"ref_{i}_errors", new_errors, height=100)
+            sample = clingo.get("answer_sets_sample") or []
+            if sample:
+                st.markdown("**Answer set sample**")
+                _render_answer_set_sample(f"ref_{i}", sample)
+
+            st.divider()
             if code:
-                prev_code = all_codes[i - 1]
-                if prev_code != code:
-                    st.markdown(f"**Diff (attempt {i})**")
-                    show_inline_diff(
-                        prev_code, code, error_lines=parse_error_lines(trigger_errors)
-                    )
-                else:
-                    st.caption(f"Attempt {i}: no changes from previous version")
-            metric_cols = st.columns(2)
-            with metric_cols[0]:
-                st.metric("Clingo time (s)", clingo_time if clingo_time else "—")
-            with metric_cols[1]:
-                st.metric("Answer sets", n_sets if n_sets else "—")
-            if clingo_errors:
-                show_text_block(f"Errors from attempt {i}", clingo_errors, height=80)
+                prev_program = code
+            prev_errors = new_errors
 
 
-def show_result(row: pd.Series):
-    prediction = cell(row, "prediction")
-    solution = cell(row, "solution")
-
+def _render_final(rec):
+    final = rec.get("final") or {}
     with st.expander("Result", expanded=True):
         cols = st.columns(2)
         with cols[0]:
             st.markdown("**Prediction**")
-            if not is_correct(row):
-                st.warning(prediction if prediction else "No unique answer set")
+            pred = final.get("prediction", "") or ""
+            if is_solved(rec):
+                st.code(pred, language=None)
             else:
-                st.code(prediction, language=None)
+                st.warning(pred if pred else "No unique answer set")
         with cols[1]:
             st.markdown("**Ground Truth**")
-            st.code(solution, language=None)
-
-
-# ---------------------------------------------------------------------------
-# Page entry point
-# ---------------------------------------------------------------------------
+            st.code(final.get("ground_truth", "") or "", language=None)
 
 
 def main():
     global _puzzle_index, _text_block_counter
 
-    file_path = st.session_state.get("mistakes_file")
-    if not file_path:
-        st.info("Select a mistakes file from the sidebar to get started.")
+    records = st.session_state.get("audit_records") or []
+    if not records:
+        st.info("Select an audit run from the sidebar to get started.")
         return
 
-    try:
-        df = load_data(file_path)
-    except Exception as e:
-        st.error(f"Failed to load {file_path}: {e}")
-        return
-
-    n_correct = sum(1 for _, row in df.iterrows() if is_correct(row))
-    st.caption(f"Loaded {len(df)} puzzles — {n_correct} correct, {len(df) - n_correct} incorrect")
+    run_name = st.session_state.get("audit_run_name", "")
+    n_correct = sum(1 for r in records if is_solved(r))
+    st.caption(
+        f"Run: `{run_name}` — {len(records)} puzzles, "
+        f"{n_correct} correct, {len(records) - n_correct} incorrect"
+    )
 
     with st.sidebar:
         st.divider()
         st.header("Puzzles")
-        labels = [puzzle_label(i, row) for i, row in df.iterrows()]
+        labels = [_puzzle_label(i, r) for i, r in enumerate(records)]
         selected = st.radio(
-            "Select puzzle", options=range(len(df)), format_func=lambda i: labels[i]
+            "Select puzzle",
+            options=range(len(records)),
+            format_func=lambda i: labels[i],
         )
 
     _puzzle_index = selected
     _text_block_counter = 0
-    row = df.iloc[selected]
+    rec = records[selected]
+    pid = rec.get("puzzle_id", str(selected))
 
-    st.subheader(f"Puzzle {selected + 1}")
+    st.subheader(f"Puzzle {pid}")
 
-    with st.expander("Story & Constraints", expanded=False):
-        show_text_block("story", cell(row, "story"), height=150)
-        show_text_block("constraints (original)", cell(row, "constraints"), height=120)
+    run_meta = rec.get("run_meta") or {}
+    if run_meta:
+        st.caption(
+            " · ".join(
+                f"{k}: {v}"
+                for k, v in run_meta.items()
+                if k in ("engine", "seed", "dataset_name", "pipeline_variant")
+            )
+        )
 
-    for step_col in STEP_LABELS:
-        show_step(step_col, row)
+    with st.expander("Inputs", expanded=False):
+        inputs = rec.get("inputs") or {}
+        _text_block("story", inputs.get("story", ""), height=150)
+        _text_block("constraints", inputs.get("constraints", ""), height=120)
+        _text_block("constants", inputs.get("constants", ""), height=100)
 
-    show_step7(row)
-    show_step8(row)
-    show_result(row)
+    steps = rec.get("steps") or {}
+    for step_key, step_id, step_name in STEP_ORDER:
+        _render_step(step_key, step_id, step_name, steps.get(step_key))
+
+    _render_initial_run(rec)
+    _render_refinements(rec)
+    _render_final(rec)
 
 
 main()

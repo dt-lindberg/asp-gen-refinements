@@ -11,7 +11,7 @@ import sys
 # Allow running directly from this directory
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from evaluation.eval_metrics import detect_hardcoded, load_data
+from evaluation_legacy.eval_metrics import detect_hardcoded, load_data
 
 DEFAULT_MISTAKES_FILE = "mistakes_0318_103804.xlsx"
 
