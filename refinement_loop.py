@@ -42,7 +42,9 @@ def _build_semantic_feedback_multi(answer_sets, max_sets_shown=3):
     )
 
 
-def refinement_loop_batch(replaces, pipeline, statuses, asets_or_errs_list):
+def refinement_loop_batch(
+    replaces, pipeline, statuses, asets_or_errs_list, *, puzzle_data, audit
+):
     """Batched refinement loop over all puzzles.
 
     Args:
@@ -50,6 +52,8 @@ def refinement_loop_batch(replaces, pipeline, statuses, asets_or_errs_list):
         pipeline: Pipeline instance.
         statuses: list of initial Clingo statuses (None or RuntimeError).
         asets_or_errs_list: list of initial answer_sets_or_errors.
+        puzzle_data: list of puzzle dicts (used for puzzle_id lookup).
+        audit: AuditLog instance to record each refinement.
 
     Returns:
         list of (replace, status, answer_sets, attempt_data) for each puzzle,
@@ -74,21 +78,25 @@ def refinement_loop_batch(replaces, pipeline, statuses, asets_or_errs_list):
             f"Refinement attempt {attempt + 1}/{MAX_ATTEMPTS}: {len(active)} active puzzles"
         )
 
-        # Update replace dicts and determine prompt kind for each active puzzle
+        # Update replace dicts and determine prompt kind + trigger per puzzle
         kind_map = {}
+        trigger_map = {}
         for i in active:
             replaces[i]["<ASP_CODE>"] = _annotate_with_line_numbers(replaces[i]["<ASP_CODE>"])
             if statuses[i] is RuntimeError:
                 replaces[i]["<ERRORS>"] = "\n".join(x[1] for x in asets_or_errs[i])
                 kind_map[i] = "refinement_syntax"
+                trigger_map[i] = "syntax"
             elif statuses[i] is None:
                 n_sets = len(asets_or_errs[i])
                 if n_sets == 0:
                     kind_map[i] = "refinement_semantic_unsat"
+                    trigger_map[i] = "unsat"
                 else:
                     replaces[i]["<SEMANTIC_FEEDBACK>"] = _build_semantic_feedback_multi(asets_or_errs[i])
                     replaces[i]["<NUM_ANSWER_SETS>"] = str(n_sets)
                     kind_map[i] = "refinement_semantic_multi"
+                    trigger_map[i] = "multi"
             else:
                 raise RuntimeError(f"Puzzle {i}: unexpected Clingo status {statuses[i]}")
 
@@ -97,17 +105,18 @@ def refinement_loop_batch(replaces, pipeline, statuses, asets_or_errs_list):
         for i in active:
             by_kind.setdefault(kind_map[i], []).append(i)
 
-        new_rules = {}
+        gen_results = {}
         for kind, indices in by_kind.items():
             kind_replaces = [replaces[i] for i in indices]
-            responses = pipeline.gen_response_batch(kind, kind_replaces)
-            for idx, resp in zip(indices, responses):
-                new_rules[idx] = extract_code_blocks(resp)
+            batch = pipeline.gen_response_batch(kind, kind_replaces)
+            for idx, (prompt, thinking, response) in zip(indices, batch):
+                gen_results[idx] = (prompt, thinking, response)
             logger.debug(f"  Generated {len(indices)} responses for kind={kind}")
 
         # Run Clingo for each active puzzle and record results
         for i in active:
-            rules_all = new_rules[i]
+            prompt, thinking, response = gen_results[i]
+            rules_all = extract_code_blocks(response)
             replaces[i]["<ASP_CODE>"] = rules_all
 
             t0 = time.time()
@@ -131,6 +140,26 @@ def refinement_loop_batch(replaces, pipeline, statuses, asets_or_errs_list):
 
             if status is None and len(asets_or_err) == 1:
                 done[i] = True
+
+            audit.record_refinement(
+                puzzle_data[i]["puzzle_id"],
+                trigger=trigger_map[i],
+                prompt=prompt,
+                thinking=thinking,
+                response=response,
+                extracted=rules_all,
+                clingo={
+                    "status": "ok" if status is None else "error",
+                    "answer_sets_count": answer_sets_count,
+                    "clingo_time": clingo_time,
+                    "clingo_errors": clingo_errors,
+                    "answer_sets_sample": (
+                        [list(s) for s in asets_or_err[:5]]
+                        if status is None
+                        else []
+                    ),
+                },
+            )
 
     n_solved = sum(done)
     logger.info(f"Refinement complete: {n_solved}/{n} puzzles solved")

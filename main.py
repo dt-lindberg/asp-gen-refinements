@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 from dataset150 import data_gen
 from pipeline import Pipeline
+from audit import AuditLog
 from logger import setup_logging, get_logger
 from utils import extract_code_blocks
 from refinement_loop import (
@@ -12,7 +13,6 @@ from refinement_loop import (
     _build_semantic_feedback_multi,
 )
 from config import (
-    MAX_ATTEMPTS,
     DEFAULT_ENGINE,
     TEMPERATURE,
     MAX_TOKENS,
@@ -32,15 +32,21 @@ def main(args):
     puzzle_pipeline = Pipeline(vars(args))
     puzzle_pipeline.path_prompt = PROMPT_PATHS
     seed_str = f"{args.seed:06d}"
-    prefix = f"vllm_{args.engine}_seed{seed_str}_"
-    puzzle_pipeline.path_cache = {
-        k: f"caches/{prefix}{k}.json" for k in puzzle_pipeline.path_prompt
-    }
-    puzzle_pipeline.path_mistakes = f"mistakes/mistakes_seed{seed_str}.xlsx"
-    logger.debug(f"Pipeline cache paths: {puzzle_pipeline.path_cache}")
+    prefix = f"vllm_{args.engine}_seed{seed_str}"
 
     puzzle_pipeline.load_prompt()
-    puzzle_pipeline.load_cache()
+
+    audit = AuditLog(
+        audit_dir=f"audit/{prefix}",
+        run_meta={
+            "engine": args.engine,
+            "seed": args.seed,
+            "temperature": args.temperature,
+            "max_tokens": args.max_tokens,
+            "dataset_name": args.dataset_name,
+            "pipeline_variant": "refinement_kinds",
+        },
+    )
 
     num = 50 if args.num == -1 else min(args.num, 50)
     puzzles = data_gen(args.dataset_name, num)
@@ -49,7 +55,8 @@ def main(args):
     # Initialize per-puzzle state
     replaces = []
     puzzle_data = []
-    for story, constraints, constants, solution in puzzles:
+    for i, (story, constraints, constants, solution) in enumerate(puzzles):
+        puzzle_id = f"{i:03d}"
         replace = {
             "<STORY>": story,
             "<CONSTRAINTS>": constraints,
@@ -64,6 +71,7 @@ def main(args):
         replaces.append(replace)
         puzzle_data.append(
             {
+                "puzzle_id": puzzle_id,
                 "story": story,
                 "constraints": constraints,
                 "constants": constants,
@@ -79,55 +87,73 @@ def main(args):
                 "clingo_errors_0": "",
             }
         )
-
-    try:
-        # Step 2: format constants (batch)
-        logger.info(f"Step 2: Formatting constants for {num} puzzles...")
-        responses = puzzle_pipeline.gen_response_batch("constants", replaces)
-        for replace, pd, resp in zip(replaces, puzzle_data, responses):
-            cf = extract_code_blocks(resp)
-            pd["constants_formatted"] = cf
-            replace["<CONSTANTS>"] = cf
-
-        # Step 3: generate predicates (batch)
-        logger.info(f"Step 3: Generating predicates for {num} puzzles...")
-        responses = puzzle_pipeline.gen_response_batch("predicates", replaces)
-        for replace, pd, resp in zip(replaces, puzzle_data, responses):
-            pred = extract_code_blocks(resp)
-            pd["predicates"] = pred
-            replace["<PREDICATES>"] = pred
-
-        # Step 4: generate search space (batch)
-        logger.info(f"Step 4: Generating search space for {num} puzzles...")
-        responses = puzzle_pipeline.gen_response_batch("search_space", replaces)
-        for replace, pd, resp in zip(replaces, puzzle_data, responses):
-            pd["rules_search_space"] = extract_code_blocks(resp)
-
-        # Step 5: paraphrase constraints (batch)
-        logger.info(f"Step 5: Paraphrasing constraints for {num} puzzles...")
-        responses = puzzle_pipeline.gen_response_batch("paraphrasing", replaces)
-        for replace, pd, resp in zip(replaces, puzzle_data, responses):
-            cp = extract_code_blocks(resp)
-            pd["constraints_paraphrased"] = cp
-            replace["<CONSTRAINTS>"] = cp
-
-        # Step 6: generate constraint rules (batch)
-        logger.info(f"Step 6: Generating constraint rules for {num} puzzles...")
-        responses = puzzle_pipeline.gen_response_constraints_batch("constraints", replaces)
-        for replace, pd, resp in zip(replaces, puzzle_data, responses):
-            pd["rules_constraints"] = extract_code_blocks(resp)
-
-    except Exception as e:
-        logger.error(f"LLM batch generation failed: {e}", exc_info=True)
-        logger.info("Saving partial results before exiting...")
-        puzzle_pipeline.save_mistakes(
-            [
-                "story", "constraints", "constraints_paraphrased",
-                "constants", "constants_formatted", "predicates",
-                "rules_search_space", "rules_constraints",
-            ]
+        audit.start_puzzle(
+            puzzle_id,
+            inputs={
+                "story": story,
+                "constraints": constraints,
+                "constants": constants,
+                "solution": solution,
+            },
         )
-        raise
+
+    # Step 2: format constants (batch)
+    logger.info(f"Step 2: Formatting constants for {num} puzzles...")
+    results = puzzle_pipeline.gen_response_batch("constants", replaces)
+    for replace, pd, (prompt, thinking, response) in zip(replaces, puzzle_data, results):
+        cf = extract_code_blocks(response)
+        pd["constants_formatted"] = cf
+        replace["<CONSTANTS>"] = cf
+        audit.record_step(
+            pd["puzzle_id"], "constants_formatting",
+            prompt=prompt, thinking=thinking, response=response, extracted=cf,
+        )
+
+    # Step 3: generate predicates (batch)
+    logger.info(f"Step 3: Generating predicates for {num} puzzles...")
+    results = puzzle_pipeline.gen_response_batch("predicates", replaces)
+    for replace, pd, (prompt, thinking, response) in zip(replaces, puzzle_data, results):
+        pred = extract_code_blocks(response)
+        pd["predicates"] = pred
+        replace["<PREDICATES>"] = pred
+        audit.record_step(
+            pd["puzzle_id"], "predicates",
+            prompt=prompt, thinking=thinking, response=response, extracted=pred,
+        )
+
+    # Step 4: generate search space (batch)
+    logger.info(f"Step 4: Generating search space for {num} puzzles...")
+    results = puzzle_pipeline.gen_response_batch("search_space", replaces)
+    for replace, pd, (prompt, thinking, response) in zip(replaces, puzzle_data, results):
+        ss = extract_code_blocks(response)
+        pd["rules_search_space"] = ss
+        audit.record_step(
+            pd["puzzle_id"], "search_space",
+            prompt=prompt, thinking=thinking, response=response, extracted=ss,
+        )
+
+    # Step 5: paraphrase constraints (batch)
+    logger.info(f"Step 5: Paraphrasing constraints for {num} puzzles...")
+    results = puzzle_pipeline.gen_response_batch("paraphrasing", replaces)
+    for replace, pd, (prompt, thinking, response) in zip(replaces, puzzle_data, results):
+        cp = extract_code_blocks(response)
+        pd["constraints_paraphrased"] = cp
+        replace["<CONSTRAINTS>"] = cp
+        audit.record_step(
+            pd["puzzle_id"], "paraphrasing",
+            prompt=prompt, thinking=thinking, response=response, extracted=cp,
+        )
+
+    # Step 6: generate constraint rules (batch)
+    logger.info(f"Step 6: Generating constraint rules for {num} puzzles...")
+    results = puzzle_pipeline.gen_response_constraints_batch("constraints", replaces)
+    for replace, pd, (prompt, thinking, response) in zip(replaces, puzzle_data, results):
+        rc = extract_code_blocks(response)
+        pd["rules_constraints"] = rc
+        audit.record_step(
+            pd["puzzle_id"], "constraints",
+            prompt=prompt, thinking=thinking, response=response, extracted=rc,
+        )
 
     # Step 7: compile + run Clingo for each puzzle (CPU, sequential)
     logger.info(f"Step 7: Running Clingo for {num} puzzles...")
@@ -158,6 +184,20 @@ def main(args):
         statuses.append(status)
         asets_or_errs_list.append(answer_sets_or_errors)
 
+        audit.record_initial_run(
+            pd["puzzle_id"],
+            asp_program=rules_all,
+            status="ok" if status is None else "error",
+            answer_sets_count=answer_sets_count,
+            clingo_time=clingo_time,
+            clingo_errors=pd["clingo_errors_0"],
+            answer_sets_sample=(
+                [list(s) for s in answer_sets_or_errors[:5]]
+                if status is None
+                else []
+            ),
+        )
+
     n_correct_after_step7 = sum(
         1 for s, a in zip(statuses, asets_or_errs_list) if s is None and len(a) == 1
     )
@@ -167,95 +207,37 @@ def main(args):
 
     # Step 8: batched refinement loop
     logger.info(f"Step 8: Starting batched refinement loop for {num} puzzles...")
-    try:
-        final_results = refinement_loop_batch(replaces, puzzle_pipeline, statuses, asets_or_errs_list)
-    except Exception as e:
-        logger.error(f"Refinement loop failed: {e}", exc_info=True)
-        logger.info("Saving partial results before exiting...")
-        puzzle_pipeline.save_mistakes(
-            [
-                "story", "constraints", "constraints_paraphrased",
-                "constants", "constants_formatted", "predicates",
-                "rules_search_space", "rules_constraints",
-            ]
-        )
-        raise
+    final_results = refinement_loop_batch(
+        replaces, puzzle_pipeline, statuses, asets_or_errs_list,
+        puzzle_data=puzzle_data, audit=audit,
+    )
 
-    # Collect results and build Excel rows
+    # Record final outcomes
     incorrect_indices = []
     for i, (pd, (replace, status, answer_sets, attempt_data)) in enumerate(
         zip(puzzle_data, final_results)
     ):
-        if len(answer_sets) != 1:
+        solved = len(answer_sets) == 1
+        if not solved:
             incorrect_indices.append(i + 1)
 
-        if len(answer_sets) == 1:
+        if solved:
             filtered_set = [fact for fact in answer_sets[0] if "," in fact]
             prediction = "\n".join(filtered_set)
         else:
             prediction = f"{len(answer_sets)} answer sets" if len(answer_sets) > 1 else ""
 
-        if len(answer_sets) != 1 or args.debug:
-            puzzle_pipeline.mistakes.append(
-                (
-                    pd["story"],
-                    pd["constraints"],
-                    pd["constraints_paraphrased"],
-                    pd["constants"],
-                    pd["constants_formatted"],
-                    pd["predicates"],
-                    pd["rules_search_space"],
-                    pd["rules_constraints"],
-                    # attempt 0 (original program)
-                    pd["rules_all"],
-                    pd["answer_sets_count_0"],
-                    pd["clingo_time_0"],
-                    pd["clingo_errors_0"],
-                    # attempts 1..MAX_ATTEMPTS
-                    *[val for quad in attempt_data for val in quad],
-                    prediction,
-                    pd["solution"],
-                    "",  # reasoning_constants
-                    "",  # reasoning_predicates
-                    "",  # reasoning_search_space
-                    "",  # reasoning_paraphrasing
-                    "",  # reasoning_constraints
-                )
-            )
+        audit.record_final(
+            pd["puzzle_id"],
+            solved=solved,
+            prediction=prediction,
+            ground_truth=pd["solution"],
+        )
 
     logger.info(
         f"Number of potentially correct predictions: {num - len(incorrect_indices)}/{num}"
     )
     logger.info(f"Incorrect indices: {incorrect_indices}")
-
-    cols = [
-        "story",
-        "constraints",
-        "constraints_paraphrased",
-        "constants",
-        "constants_formatted",
-        "predicates",
-        "rules_search_space",
-        "rules_constraints",
-        *[
-            field
-            for i in range(MAX_ATTEMPTS + 1)
-            for field in (
-                f"refinement_{i}",
-                f"#answer_sets_{i}",
-                f"clingo_time_{i}",
-                f"clingo_errors_{i}",
-            )
-        ],
-        "prediction",
-        "solution",
-        "reasoning_constants",
-        "reasoning_predicates",
-        "reasoning_search_space",
-        "reasoning_paraphrasing",
-        "reasoning_constraints",
-    ]
-    puzzle_pipeline.save_mistakes(cols)
 
 
 if __name__ == "__main__":
@@ -266,7 +248,7 @@ if __name__ == "__main__":
         "--engine",
         default=DEFAULT_ENGINE,
         type=str,
-        help="engine label used for cache file naming",
+        help="engine label used for audit directory naming",
     )
     parser.add_argument("--temperature", default=TEMPERATURE, type=float)
     parser.add_argument("--max_tokens", default=MAX_TOKENS, type=int)

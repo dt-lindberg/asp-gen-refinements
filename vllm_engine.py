@@ -23,7 +23,19 @@ from config import (
 setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
 logger = get_logger(__name__)
 
-_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+_THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+
+
+def _split_thinking(text):
+    """Return (thinking, response) extracted from a raw LLM output.
+
+    Thinking content is only surfaced for audit logging. The response with
+    <think>...</think> blocks removed is what downstream consumers use, so
+    thinking never bleeds into subsequent prompts.
+    """
+    thinking = "\n".join(m.strip() for m in _THINK_RE.findall(text))
+    response = _THINK_RE.sub("", text).strip()
+    return thinking, response
 
 
 class VLLMEngine:
@@ -91,7 +103,9 @@ class VLLMEngine:
             messages_list: list of conversations, each a list of role/content dicts.
 
         Returns:
-            list of response strings (thinking tokens stripped).
+            list of (thinking, response) tuples. `response` has thinking
+            tokens stripped; `thinking` contains the raw content extracted
+            from <think>...</think> blocks (empty string when THINKING is off).
         """
         formatted = [self._apply_template(msgs) for msgs in messages_list]
 
@@ -105,4 +119,4 @@ class VLLMEngine:
             f"Generated {n_tokens} tokens in {t_gen:.2f}s ({n_tokens / t_gen:.2f} tok/s)"
         )
 
-        return [_THINK_RE.sub("", o.outputs[0].text).strip() for o in outputs]
+        return [_split_thinking(o.outputs[0].text) for o in outputs]
