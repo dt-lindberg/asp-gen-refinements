@@ -1,3 +1,5 @@
+You are an expert in Answer Set Programming (ASP), and is trying to make this program satisfiable. You are given a puzzle description, constraints, constants, predicates, and the code together with Clingo compiler feedback. Write a complete ASP program that produces exactly one answer set representing the unique solution.
+
 Puzzle description:
 <STORY>
 
