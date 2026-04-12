@@ -1,19 +1,22 @@
 # MODEL
 MODEL_PATH = (
     "/home/dlindberg/.cache/huggingface/hub/"
-    "models--unsloth--Qwen3-30B-A3B-Instruct-2507-GGUF/snapshots/"
-    "eea7b2be5805a5f151f8847ede8e5f9a9284bf77/"
-    "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf"
+    "models--unsloth--Qwen3-30B-A3B-Thinking-2507-GGUF/snapshots/"
+    "a9b37aaac12b2bd0098783a443429543dd76a14d/"
+    "Qwen3-30B-A3B-Thinking-2507-Q4_K_M.gguf"
 )
 
 # Seed for vLLM to allow deterministic cache reuse across runs
 SEED = 132
 
 # Enable/disable thinking mode
-THINKING = False
+THINKING = True
 
 # INFERENCE / SAMPLING
 # MAX_TOKENS:               maximum number of output tokens per sequence
+#   For thinking mode this budget covers both the <think>...</think> trace and
+#   the final response.  Qwen3 thinking traces can be several thousand tokens,
+#   so the limit is set high enough that the model terminates naturally.
 # MAX_MODEL_LEN:            maximum input+output tokens a single sequence can occupy;
 #   max_model_len * max_num_seqs = maximum tokens in batch (KV-cache limit)
 # MAX_NUM_BATCHED_TOKENS:   maximum number of input tokens across a full batch
@@ -21,8 +24,8 @@ THINKING = False
 # TOP_P:                    nucleus sampling — cumulative probability threshold
 # TOP_K:                    only the top-K most likely tokens are considered per step
 # MIN_P:                    minimum probability relative to top token to be considered
-MAX_TOKENS = 1500
-MAX_MODEL_LEN = 16000
+MAX_TOKENS = 20000
+MAX_MODEL_LEN = 32000
 MAX_NUM_BATCHED_TOKENS = 8192
 MAX_NUM_SEQS = 25
 TEMPERATURE = 0.7
@@ -46,7 +49,7 @@ SEVERELY_UNDERCONSTRAINED_THRESHOLD = 1000
 MAX_VARIABLE_ATOMS = 30
 
 # PIPELINE
-DEFAULT_ENGINE = "qwen3-30b-local"
+DEFAULT_ENGINE = "qwen3-30b-thinking"
 
 PROMPT_PATHS = {
     "constants": "prompts/2_constant_formatting.txt",
