@@ -23,14 +23,12 @@ MONITOR_PID=$!
 
 source /home/dlindberg/Projects/asp-gen-refinements/.venv/bin/activate
 
-# Deterministic vLLM scheduling for reproducibility
-export VLLM_ENABLE_V1_MULTIPROCESSING=0
 export LOG_DIR=/home/dlindberg/Projects/asp-gen-refinements-V2/logs
 
 python3 main.py \
     --debug \
     --dataset_name train \
-    --num 3 \
+    --num -1 \
     --engine qwen3-30b-local \
     --seed "${RUN_SEED:-132}" \
 
