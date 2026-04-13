@@ -24,15 +24,15 @@ THINKING = True
 # TOP_P:                    nucleus sampling — cumulative probability threshold
 # TOP_K:                    only the top-K most likely tokens are considered per step
 # MIN_P:                    minimum probability relative to top token to be considered
-MAX_TOKENS = 20000
-MAX_MODEL_LEN = 32000
+MAX_TOKENS = 81_920
+MAX_MODEL_LEN = 94_000
 MAX_NUM_BATCHED_TOKENS = 8192
 MAX_NUM_SEQS = 25
-TEMPERATURE = 0.7
-GPU_MEMORY_UTILIZATION = 0.93
-TOP_P = 0.8
+TEMPERATURE = 0.6
+GPU_MEMORY_UTILIZATION = 0.95
+TOP_P = 0.95
 TOP_K = 20
-MIN_P = 0.01
+MIN_P = 0.0
 
 # CLINGO
 # CLINGO_MAX_MODELS: cap model enumeration to detect severely under-constrained programs without hanging
