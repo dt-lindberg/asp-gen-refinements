@@ -71,6 +71,24 @@ class VLLMEngine:
         logger.info(f"Model loaded in {time.perf_counter() - t0:.2f}s")
 
         self.tokenizer = self.llm.get_tokenizer()
+
+        # Build stop-token set: include the tokenizer's EOS plus <|im_end|>
+        # explicitly.  With some GGUF checkpoints vLLM does not automatically
+        # stop at <|im_end|>, causing the model to continue past its natural
+        # end-of-turn and re-emit role markers ("assistant") in the output.
+        stop_token_ids: list[int] = []
+        eos_id = self.tokenizer.eos_token_id
+        if eos_id is not None:
+            stop_token_ids.append(eos_id)
+        try:
+            im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+            if im_end_id is not None and im_end_id not in stop_token_ids:
+                stop_token_ids.append(im_end_id)
+                logger.info(f"Added <|im_end|> (id={im_end_id}) as explicit stop token")
+        except Exception:
+            pass
+        logger.info(f"Stop token ids: {stop_token_ids}")
+
         self.sampling_params = SamplingParams(
             temperature=temperature,
             max_tokens=max_tokens,
@@ -78,6 +96,7 @@ class VLLMEngine:
             top_k=TOP_K,
             min_p=MIN_P,
             seed=seed,
+            stop_token_ids=stop_token_ids if stop_token_ids else None,
         )
 
     def _apply_template(self, messages):
