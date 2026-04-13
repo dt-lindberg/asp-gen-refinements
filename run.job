@@ -28,7 +28,7 @@ export LOG_DIR=/home/dlindberg/Projects/asp-gen-refinements-V2/logs
 python3 main.py \
     --debug \
     --dataset_name train \
-    --num 5 \
+    --num -1 \
     --engine qwen3-30b-thinking \
     --seed "${RUN_SEED:-132}" \
 
