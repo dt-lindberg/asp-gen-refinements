@@ -49,51 +49,58 @@ P1=P2-50 :- match(E1,P1,W1), match(E2,P2,W2), E1="Tabitha", W2="sandalwood".
 </example_1>
 
 <example_2>
-Waterford Spa had a full appointment calendar booked today. Help Janice figure out the schedule by matching each masseuse to her client, and determine the total price for each. Remember, as with all grid-based logic puzzles, no option in any category will ever be used more than once.
-1. Hannah paid more than Teri's client.
-2. Freda paid 20 dollars more than Lynda's client.
-3. Hannah paid 10 dollars less than Nancy's client.
-4. Nancy's client, Hannah and Ginger were all different clients.
-5. Hannah was either the person who paid $180 or Lynda's client.
+The Winter Olympics have just wrapped up in Norway. Using only the clues that follow, determine the number of gold and silver medals won by each country. Remember, as with all grid-based logic puzzles, no option in any category will ever be used more than once.
+1. The four teams are the team from Bolivia, the team that won 3 gold medals, the team that won 6 silver medals, and the team from Argentina.
+2. The team from Oman and the team that won 10 silver medals are different.
+3. The team from Oman finished with 2 gold medals or finished with 1 gold medal.
+4. The squad that won 3 gold medals, the squad that won 6 silver medals and the squad from Bolivia were all different teams.
+5. Neither the team from Argentina nor the squad that won 2 silver medals is the squad that won 4 gold medals.
+6. The squad that won 2 gold medals is either the squad that won 6 silver medals or the team from Grenada.
 
 Constants:
-Clients: Aimee; Ginger; Freda; Hannah.
-Prices: $150; $160; $170; $180.
-Masseuses: Lynda; Nancy; Teri; Whitney.
+Countries: Argentina; Bolivia; Grenada; Oman.
+Silver medals: 2; 6; 10; 11.
+Gold medals: 1; 2; 3; 4.
 
 ASP Program:
 ```asp
 % Constants
-client("Aimee"; "Ginger"; "Freda"; "Hannah").
-price(150; 160; 170; 180).
-masseuse("Lynda"; "Nancy"; "Teri"; "Whitney").
+country("Argentina"; "Bolivia"; "Grenada"; "Oman").
+silver_medals(2; 6; 10; 11).
+gold_medals(1; 2; 3; 4).
 
-% Search space: for each client C, schedule exactly one masseuse M at price P.
-{schedule(M, C, P): masseuse(M), price(P)}=1 :- client(C).
+% Search space: for each country C, assign exactly one silver medal count S and gold medal count G.
+{assign(C, S, G): silver_medals(S), gold_medals(G)}=1 :- country(C).
 
 % No option in any category will ever be used more than once.
-{M1=M2; C1=C2; P1=P2}=0 :- schedule(M1,C1,P1), schedule(M2,C2,P2), (M1,C1,P1)!=(M2,C2,P2).
+{C1=C2; S1=S2; G1=G2}=0 :- assign(C1,S1,G1), assign(C2,S2,G2), (C1,S1,G1)!=(C2,S2,G2).
 
-% 1. Hannah paid more than Teri's client.
-:- schedule(_, "Hannah", P_H), schedule("Teri", _, P_T), P_H <= P_T.
+% 1. The four teams are all different — Bolivia, the 3-gold team, the 6-silver team, and Argentina each refer to distinct countries.
+{C="Bolivia"; G=3; S=6; C="Argentina"}=1 :- assign(C,S,G).
 
-% 2. Freda paid 20 dollars more than Lynda's client.
-:- schedule(_, "Freda", P_F), schedule("Lynda", _, P_L), P_F != P_L + 20.
+% 2. The team from Oman and the team that won 10 silver medals are different.
+C1!=C2 :- assign(C1,S1,G1), assign(C2,S2,G2), C1="Oman", S2=10.
 
-% 3. Hannah paid 10 dollars less than Nancy's client.
-:- schedule(_, "Hannah", P_H), schedule("Nancy", _, P_N), P_H != P_N - 10.
+% 3. The team from Oman finished with 2 gold medals or finished with 1 gold medal.
+{G=2; G=1}=1 :- assign(C,S,G), C="Oman".
 
-% 4. Nancy's client, Hannah and Ginger were all different clients.
-:- schedule("Nancy", "Hannah", _).
-:- schedule("Nancy", "Ginger", _).
+% 4. The squad that won 3 gold medals, the squad that won 6 silver medals and the squad from Bolivia were all different teams — three pairwise inequalities.
+C1!=C2 :- assign(C1,S1,G1), assign(C2,S2,G2), assign(C3,S3,G3), G1=3, S2=6, C3="Bolivia".
+C2!=C3 :- assign(C1,S1,G1), assign(C2,S2,G2), assign(C3,S3,G3), G1=3, S2=6, C3="Bolivia".
+C1!=C3 :- assign(C1,S1,G1), assign(C2,S2,G2), assign(C3,S3,G3), G1=3, S2=6, C3="Bolivia".
 
-% 5. Hannah was either the person who paid $180 or Lynda's client.
-:- schedule(M_H, "Hannah", P_H), schedule("Lynda", C_L, _), P_H != 180, C_L != "Hannah".
+% 5. Neither the team from Argentina nor the squad that won 2 silver medals is the squad that won 4 gold medals.
+{C="Argentina"; S=2}=0 :- assign(C,S,G), G=4.
+C1!=C2 :- assign(C1,S1,G1), assign(C2,S2,G2), C1="Argentina", S2=2.
 
-#show schedule/3.
+% 6. The squad that won 2 gold medals is either the squad that won 6 silver medals or the team from Grenada.
+{S=6; C="Grenada"}=1 :- assign(C,S,G), G=2.
+
+#show assign/3.
 ```
 </example_2>
 
+Here is the problem to be solved:
 <problem_to_solve>
 <STORY>
 <CONSTRAINTS>
@@ -104,23 +111,34 @@ Constants:
 
 Here are some important rules to follow when generating the ASP code:
 <rules>
-The ASP program must contain the following parts in order:
-1. Constant declarations: facts of the form "category(const1; const2; ...)."
-   - Normalize category names to lowercase with underscores.
-   - Turn constants into integers when possible (e.g., $225 → 225, September → 9, "3 days" → 3). Use double-quoted strings otherwise (e.g., "Bonita", "9:30AM").
-2. Search space: a choice rule assigning each entity to exactly one combination from the remaining categories.
-3. Uniqueness: ensure no value in any category is used more than once across all assignments.
-4. Constraint rules: encode each numbered clue as one or more ASP rules using only the defined constants and predicates.
-5. Show directives: one "#show predicate/arity." per predicate.
+1. Constant declarations — "category(const1; const2; ...)."
+   - Category names: lowercase with underscores only (e.g., wood_type, gold_medals).
+   - All constants in the same category must use the same format — all integers or all quoted strings.
+   - Prefer integers: strip special characters ($225 → 225), strip units while keeping the number ("3 days" → 3, "2 months" → 2), and convert verbal or ordinal numerals (once → 1, twice → 2, third → 3, September → 9).
+   - Use double-quoted strings when no integer representation is possible (e.g., "Bonita", "9:30AM").
 
-Constraint rules take one of these forms:
-  <C1>; <C2>; ...; <Cm> :- <L1>, <L2>, ..., <Ln>.       % at least one Ci must hold
-  {<C1>; <C2>; ...; <Cm>}=k :- <L1>, <L2>, ..., <Ln>.   % exactly k of Ci must hold
-  :- <L1>, <L2>, ..., <Ln>.                             % this combination is forbidden
+2. Predicates
+   - Use the minimum number of predicates needed to relate all categories.
+   - Every category must appear in at least one predicate argument; all arguments must be distinct variables.
+   - Choose a name that reflects the relationship (e.g., match, assign, schedule, launch).
 
-NOTE: a clue of the form "Of A and B, one is C and the other is D" means: A≠B, A is C or D, and B is C or D. Encode each part separately.
+3. Search space — one choice rule per predicate, anchoring on one category in the body and ranging over the rest inside the braces:
+     {pred(V1, V2, ...): cat2(V2), cat3(V3), ...}=1 :- cat1(V1).
 
-IMPORTANT: In your response, include a SINGLE ASP code-block with the complete program.
+4. Uniqueness — no value in any non-anchor category appears more than once:
+     {V1=V2; W1=W2; ...}=0 :- pred(V1,W1,...), pred(V2,W2,...), (V1,W1,...)!=(V2,W2,...).
+
+5. Constraint rules — encode each clue using one or more rules of these forms, using only defined constants and predicates:
+     <C1>; ...; <Cm> :- <L1>, ..., <Ln>.      % if all Li hold, at least one Ci must hold
+     {<C1>; ...; <Cm>}=k :- <L1>, ..., <Ln>.  % if all Li hold, exactly k of Ci hold
+     :- <L1>, ..., <Ln>.                        % this combination is forbidden
+
+   Common patterns:
+   - "Of A and B, one is C and the other is D" → three rules: A≠B, A is C or D, B is C or D.
+   - "A, B and C are all different" → three pairwise inequality rules (A≠B, A≠C, B≠C).
+   - "Neither A nor B is X" → {A_cond; B_cond}=0 :- ... X ... .
+
+6. Show directives — one "#show pred/arity." per predicate.
 </rules>
 
 ASP Program:
