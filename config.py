@@ -52,24 +52,11 @@ MAX_VARIABLE_ATOMS = 30
 DEFAULT_ENGINE = "qwen3-30b-thinking"
 
 PROMPT_PATHS = {
-    "constants": "prompts/2_constant_formatting.txt",
-    "predicates": "prompts/3_gen_predicates.txt",
-    "search_space": "prompts/4_gen_search_space.txt",
-    "paraphrasing": "prompts/5_paraphrasing.txt",
-    "constraints": "prompts/6_gen_constraints.txt",
+    "asp_fewshot": "prompts/0_gen_asp_fewshot.txt",
     "refinement_syntax": "prompts/7_refinement_syntax.txt",
     "refinement_semantic_unsat": "prompts/8_refinement_semantic_unsat.txt",
     "refinement_semantic_multi": "prompts/9_refinement_semantic_multi.txt",
 }
-
-# Multi-turn prompt strings for constraint generation
-CONSTRAINTS_SYSTEM = (
-    "You are a semantic parser to turn clues in a problem into logical rules "
-    "using only provided constants and predicates."
-)
-CONSTRAINTS_ASSISTANT_ACK = (
-    "Ok. I will only write constraints under the provided forms."
-)
 
 # LOGGING
 LOG_FORMAT = (

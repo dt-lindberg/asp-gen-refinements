@@ -43,7 +43,8 @@ def _build_semantic_feedback_multi(answer_sets, max_sets_shown=3):
 
 
 def refinement_loop_batch(
-    replaces, pipeline, statuses, asets_or_errs_list, *, puzzle_data, audit
+    replaces, pipeline, statuses, asets_or_errs_list, *, puzzle_data, audit,
+    max_attempts=MAX_ATTEMPTS,
 ):
     """Batched refinement loop over all puzzles.
 
@@ -54,10 +55,11 @@ def refinement_loop_batch(
         asets_or_errs_list: list of initial answer_sets_or_errors.
         puzzle_data: list of puzzle dicts (used for puzzle_id lookup).
         audit: AuditLog instance to record each refinement.
+        max_attempts: maximum number of refinement iterations (default: MAX_ATTEMPTS).
 
     Returns:
         list of (replace, status, answer_sets, attempt_data) for each puzzle,
-        where attempt_data is a list of MAX_ATTEMPTS tuples
+        where attempt_data is a list of max_attempts tuples
         (code, answer_sets_count, clingo_time, clingo_errors).
     """
     n = len(replaces)
@@ -68,14 +70,14 @@ def refinement_loop_batch(
     # Puzzles with exactly 1 answer set on entry are already done
     done = [statuses[i] is None and len(asets_or_errs[i]) == 1 for i in range(n)]
 
-    for attempt in range(MAX_ATTEMPTS):
+    for attempt in range(max_attempts):
         active = [i for i in range(n) if not done[i]]
         if not active:
             logger.info(f"All {n} puzzles done after {attempt} attempts")
             break
 
         logger.info(
-            f"Refinement attempt {attempt + 1}/{MAX_ATTEMPTS}: {len(active)} active puzzles"
+            f"Refinement attempt {attempt + 1}/{max_attempts}: {len(active)} active puzzles"
         )
 
         # Update replace dicts and determine prompt kind + trigger per puzzle
@@ -166,7 +168,7 @@ def refinement_loop_batch(
 
     results = []
     for i in range(n):
-        while len(attempt_data[i]) < MAX_ATTEMPTS:
+        while len(attempt_data[i]) < max_attempts:
             attempt_data[i].append(("", 0, 0.0, ""))
         answer_sets = asets_or_errs[i] if statuses[i] is None else []
         results.append((replaces[i], statuses[i], answer_sets, attempt_data[i]))

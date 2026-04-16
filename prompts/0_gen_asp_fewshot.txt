@@ -1,0 +1,126 @@
+<task>
+You are given a logic grid puzzle with a story, numbered clues, and categorized constants. Your task is to generate a complete ASP (Answer Set Programming) program that, when solved with Clingo, yields a unique answer set representing the puzzle's solution.
+
+Provided below are:
+- two examples: `example_1` and `example_2`,
+- the problem you must solve: `problem_to_solve`,
+- important rules: `rules`.
+</task>
+
+<example_1>
+"Against the Grain" offers hand-made wooden furniture at reasonable prices. Each item is made by an in-house employee. Using only the clues that follow, match each item to the employee who crafted it, and determine its price and the type of wood used to make it. Remember, as with all grid-based logic puzzles, no option in any category will ever be used more than once.
+1. Bonita's piece costs $325.
+2. The item made of poplar costs more than Yvette's piece.
+3. Tabitha's item costs 50 dollars less than the piece made of sandalwood.
+4. The $275 item is either the piece made of ash or Yvette's item.
+
+Constants:
+Employees: Bonita; Yvette; Tabitha.
+Prices: $225; $275; $325.
+Wood types: ash; poplar; sandalwood.
+
+ASP Program:
+```asp
+% Constants
+employee("Bonita"; "Yvette"; "Tabitha").
+price(225; 275; 325).
+wood_type("ash"; "poplar"; "sandalwood").
+
+% Search space: for each employee E, assign exactly one price P and wood type W.
+{match(E, P, W): price(P), wood_type(W)}=1 :- employee(E).
+
+% No option in any category will ever be used more than once.
+{E1=E2; P1=P2; W1=W2}=0 :- match(E1,P1,W1), match(E2,P2,W2), (E1,P1,W1)!=(E2,P2,W2).
+
+% 1. Bonita's piece costs $325.
+P=325 :- match(E,P,W), E="Bonita".
+
+% 2. The item made of poplar costs more than Yvette's piece.
+P1>P2 :- match(E1,P1,W1), match(E2,P2,W2), W1="poplar", E2="Yvette".
+
+% 3. Tabitha's item costs 50 dollars less than the piece made of sandalwood.
+P1=P2-50 :- match(E1,P1,W1), match(E2,P2,W2), E1="Tabitha", W2="sandalwood".
+
+% 4. The $275 item is either the piece made of ash or Yvette's item.
+{W="ash"; E="Yvette"}=1 :- match(E,P,W), P=275.
+
+#show match/3.
+```
+</example_1>
+
+<example_2>
+Waterford Spa had a full appointment calendar booked today. Help Janice figure out the schedule by matching each masseuse to her client, and determine the total price for each. Remember, as with all grid-based logic puzzles, no option in any category will ever be used more than once.
+1. Hannah paid more than Teri's client.
+2. Freda paid 20 dollars more than Lynda's client.
+3. Hannah paid 10 dollars less than Nancy's client.
+4. Nancy's client, Hannah and Ginger were all different clients.
+5. Hannah was either the person who paid $180 or Lynda's client.
+
+Constants:
+Clients: Aimee; Ginger; Freda; Hannah.
+Prices: $150; $160; $170; $180.
+Masseuses: Lynda; Nancy; Teri; Whitney.
+
+ASP Program:
+```asp
+% Constants
+client("Aimee"; "Ginger"; "Freda"; "Hannah").
+price(150; 160; 170; 180).
+masseuse("Lynda"; "Nancy"; "Teri"; "Whitney").
+
+% Search space: for each client C, schedule exactly one masseuse M at price P.
+{schedule(M, C, P): masseuse(M), price(P)}=1 :- client(C).
+
+% No option in any category will ever be used more than once.
+{M1=M2; C1=C2; P1=P2}=0 :- schedule(M1,C1,P1), schedule(M2,C2,P2), (M1,C1,P1)!=(M2,C2,P2).
+
+% 1. Hannah paid more than Teri's client.
+:- schedule(_, "Hannah", P_H), schedule("Teri", _, P_T), P_H <= P_T.
+
+% 2. Freda paid 20 dollars more than Lynda's client.
+:- schedule(_, "Freda", P_F), schedule("Lynda", _, P_L), P_F != P_L + 20.
+
+% 3. Hannah paid 10 dollars less than Nancy's client.
+:- schedule(_, "Hannah", P_H), schedule("Nancy", _, P_N), P_H != P_N - 10.
+
+% 4. Nancy's client, Hannah and Ginger were all different clients.
+:- schedule("Nancy", "Hannah", _).
+:- schedule("Nancy", "Ginger", _).
+
+% 5. Hannah was either the person who paid $180 or Lynda's client.
+:- schedule(M_H, "Hannah", P_H), schedule("Lynda", C_L, _), P_H != 180, C_L != "Hannah".
+
+#show schedule/3.
+```
+</example_2>
+
+<problem_to_solve>
+<STORY>
+<CONSTRAINTS>
+
+Constants:
+<CONSTANTS>
+</problem_to_solve>
+
+Here are some important rules to follow when generating the ASP code:
+<rules>
+The ASP program must contain the following parts in order:
+1. Constant declarations: facts of the form "category(const1; const2; ...)."
+   - Normalize category names to lowercase with underscores.
+   - Turn constants into integers when possible (e.g., $225 → 225, September → 9, "3 days" → 3). Use double-quoted strings otherwise (e.g., "Bonita", "9:30AM").
+2. Search space: a choice rule assigning each entity to exactly one combination from the remaining categories.
+3. Uniqueness: ensure no value in any category is used more than once across all assignments.
+4. Constraint rules: encode each numbered clue as one or more ASP rules using only the defined constants and predicates.
+5. Show directives: one "#show predicate/arity." per predicate.
+
+Constraint rules take one of these forms:
+  <C1>; <C2>; ...; <Cm> :- <L1>, <L2>, ..., <Ln>.       % at least one Ci must hold
+  {<C1>; <C2>; ...; <Cm>}=k :- <L1>, <L2>, ..., <Ln>.   % exactly k of Ci must hold
+  :- <L1>, <L2>, ..., <Ln>.                             % this combination is forbidden
+
+NOTE: a clue of the form "Of A and B, one is C and the other is D" means: A≠B, A is C or D, and B is C or D. Encode each part separately.
+
+IMPORTANT: In your response, include a SINGLE ASP code-block with the complete program.
+</rules>
+
+ASP Program:

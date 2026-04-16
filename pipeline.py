@@ -11,8 +11,6 @@ from config import (
     MAX_TOKENS,
     CLINGO_MAX_MODELS,
     CLINGO_TIMEOUT,
-    CONSTRAINTS_SYSTEM,
-    CONSTRAINTS_ASSISTANT_ACK,
 )
 
 setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
@@ -75,46 +73,6 @@ class Pipeline:
         generated = self._get_engine().generate_batch(messages_list)
         return [
             (prompts[i], thinking, response)
-            for i, (thinking, response) in enumerate(generated)
-        ]
-
-    def gen_response_constraints_batch(self, kind, replaces):
-        """Generate constraint responses for a batch of puzzles (multi-turn format).
-
-        Returns:
-            list of (prompt, thinking, response) tuples — one per puzzle.
-            For this multi-turn step `prompt` is the full list of role/content
-            message dicts that were sent to the LLM (including the in-context
-            examples, which never carry thinking tokens).
-        """
-        messages_list = []
-
-        for replace in replaces:
-            prompt = self.prompt[kind]
-            for k, v in replace.items():
-                prompt = prompt.replace(k, v)
-
-            general, ex1, ex2, ex3 = prompt.split("\n\nProblem ")
-            ex1, response1 = ex1.split("\n\nConstraints:\n")
-            ex2, response2 = ex2.split("\n\nConstraints:\n")
-            ex1 = "Problem " + ex1 + "\n\nConstraints:"
-            ex2 = "Problem " + ex2 + "\n\nConstraints:"
-            ex3 = "Problem " + ex3
-            messages = [
-                {"role": "system", "content": CONSTRAINTS_SYSTEM},
-                {"role": "user", "content": general},
-                {"role": "assistant", "content": CONSTRAINTS_ASSISTANT_ACK},
-                {"role": "user", "content": ex1},
-                {"role": "assistant", "content": response1},
-                {"role": "user", "content": ex2},
-                {"role": "assistant", "content": response2},
-                {"role": "user", "content": ex3},
-            ]
-            messages_list.append(messages)
-
-        generated = self._get_engine().generate_batch(messages_list)
-        return [
-            (messages_list[i], thinking, response)
             for i, (thinking, response) in enumerate(generated)
         ]
 

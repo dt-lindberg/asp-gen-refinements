@@ -16,6 +16,7 @@ from config import (
     DEFAULT_ENGINE,
     TEMPERATURE,
     MAX_TOKENS,
+    MAX_ATTEMPTS,
     PROMPT_PATHS,
     SEED,
 )
@@ -44,7 +45,7 @@ def main(args):
             "temperature": args.temperature,
             "max_tokens": args.max_tokens,
             "dataset_name": args.dataset_name,
-            "pipeline_variant": "refinement_kinds",
+            "pipeline_variant": "fewshot",
         },
     )
 
@@ -76,11 +77,6 @@ def main(args):
                 "constraints": constraints,
                 "constants": constants,
                 "solution": solution,
-                "constraints_paraphrased": "",
-                "constants_formatted": "",
-                "predicates": "",
-                "rules_search_space": "",
-                "rules_constraints": "",
                 "rules_all": "",
                 "answer_sets_count_0": 0,
                 "clingo_time_0": 0.0,
@@ -97,72 +93,24 @@ def main(args):
             },
         )
 
-    # Step 2: format constants (batch)
-    logger.info(f"Step 2: Formatting constants for {num} puzzles...")
-    results = puzzle_pipeline.gen_response_batch("constants", replaces)
+    # Step 1: generate complete ASP program (batch, few-shot)
+    logger.info(f"Step 1: Generating ASP programs for {num} puzzles (few-shot)...")
+    results = puzzle_pipeline.gen_response_batch("asp_fewshot", replaces)
     for replace, pd, (prompt, thinking, response) in zip(replaces, puzzle_data, results):
-        cf = extract_code_blocks(response)
-        pd["constants_formatted"] = cf
-        replace["<CONSTANTS>"] = cf
+        rules_all = extract_code_blocks(response)
+        pd["rules_all"] = rules_all
+        replace["<ASP_CODE>"] = rules_all
         audit.record_step(
-            pd["puzzle_id"], "constants_formatting",
-            prompt=prompt, thinking=thinking, response=response, extracted=cf,
+            pd["puzzle_id"], "asp_generation",
+            prompt=prompt, thinking=thinking, response=response, extracted=rules_all,
         )
 
-    # Step 3: generate predicates (batch)
-    logger.info(f"Step 3: Generating predicates for {num} puzzles...")
-    results = puzzle_pipeline.gen_response_batch("predicates", replaces)
-    for replace, pd, (prompt, thinking, response) in zip(replaces, puzzle_data, results):
-        pred = extract_code_blocks(response)
-        pd["predicates"] = pred
-        replace["<PREDICATES>"] = pred
-        audit.record_step(
-            pd["puzzle_id"], "predicates",
-            prompt=prompt, thinking=thinking, response=response, extracted=pred,
-        )
-
-    # Step 4: generate search space (batch)
-    logger.info(f"Step 4: Generating search space for {num} puzzles...")
-    results = puzzle_pipeline.gen_response_batch("search_space", replaces)
-    for replace, pd, (prompt, thinking, response) in zip(replaces, puzzle_data, results):
-        ss = extract_code_blocks(response)
-        pd["rules_search_space"] = ss
-        audit.record_step(
-            pd["puzzle_id"], "search_space",
-            prompt=prompt, thinking=thinking, response=response, extracted=ss,
-        )
-
-    # Step 5: paraphrase constraints (batch)
-    logger.info(f"Step 5: Paraphrasing constraints for {num} puzzles...")
-    results = puzzle_pipeline.gen_response_batch("paraphrasing", replaces)
-    for replace, pd, (prompt, thinking, response) in zip(replaces, puzzle_data, results):
-        cp = extract_code_blocks(response)
-        pd["constraints_paraphrased"] = cp
-        replace["<CONSTRAINTS>"] = cp
-        audit.record_step(
-            pd["puzzle_id"], "paraphrasing",
-            prompt=prompt, thinking=thinking, response=response, extracted=cp,
-        )
-
-    # Step 6: generate constraint rules (batch)
-    logger.info(f"Step 6: Generating constraint rules for {num} puzzles...")
-    results = puzzle_pipeline.gen_response_constraints_batch("constraints", replaces)
-    for replace, pd, (prompt, thinking, response) in zip(replaces, puzzle_data, results):
-        rc = extract_code_blocks(response)
-        pd["rules_constraints"] = rc
-        audit.record_step(
-            pd["puzzle_id"], "constraints",
-            prompt=prompt, thinking=thinking, response=response, extracted=rc,
-        )
-
-    # Step 7: compile + run Clingo for each puzzle (CPU, sequential)
-    logger.info(f"Step 7: Running Clingo for {num} puzzles...")
+    # Step 2: compile + run Clingo for each puzzle (CPU, sequential)
+    logger.info(f"Step 2: Running Clingo for {num} puzzles...")
     statuses = []
     asets_or_errs_list = []
     for replace, pd in zip(replaces, puzzle_data):
-        rules_all = pd["rules_search_space"] + "\n\n" + pd["rules_constraints"]
-        pd["rules_all"] = rules_all
-        replace["<ASP_CODE>"] = rules_all
+        rules_all = pd["rules_all"]
 
         t0 = time.time()
         status, answer_sets_or_errors = puzzle_pipeline.gen_answer_set(rules_all)
@@ -198,18 +146,19 @@ def main(args):
             ),
         )
 
-    n_correct_after_step7 = sum(
+    n_correct_after_step2 = sum(
         1 for s, a in zip(statuses, asets_or_errs_list) if s is None and len(a) == 1
     )
     logger.info(
-        f"After step 7: {n_correct_after_step7}/{num} puzzles solved without refinement"
+        f"After step 2: {n_correct_after_step2}/{num} puzzles solved without refinement"
     )
 
-    # Step 8: batched refinement loop
-    logger.info(f"Step 8: Starting batched refinement loop for {num} puzzles...")
+    # Step 3: batched refinement loop
+    logger.info(f"Step 3: Starting batched refinement loop for {num} puzzles...")
     final_results = refinement_loop_batch(
         replaces, puzzle_pipeline, statuses, asets_or_errs_list,
         puzzle_data=puzzle_data, audit=audit,
+        max_attempts=args.max_attempts,
     )
 
     # Record final outcomes
@@ -253,6 +202,8 @@ if __name__ == "__main__":
     parser.add_argument("--temperature", default=TEMPERATURE, type=float)
     parser.add_argument("--max_tokens", default=MAX_TOKENS, type=int)
     parser.add_argument("--seed", default=SEED, type=int)
+    parser.add_argument("--max_attempts", default=MAX_ATTEMPTS, type=int,
+                        help="maximum refinement loop iterations")
     parser.add_argument("--debug", default=False, action="store_true")
     args = parser.parse_args()
     main(args)
