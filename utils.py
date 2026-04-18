@@ -15,4 +15,7 @@ def extract_code_blocks(response):
     match = re.search(r"```[^\n]*\n(.*)", response, re.DOTALL)
     if match:
         return match.group(1).strip()
+    match = re.search(r"<asp_program>(.*?)</asp_program>", response, re.DOTALL)
+    if match:
+        return match.group(1).strip()
     return response
