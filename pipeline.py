@@ -82,6 +82,22 @@ class Pipeline:
         Returns:
             (None, list_of_answer_sets) on success, (RuntimeError, messages) on parse error.
         """
+        # An empty/whitespace program is satisfiable in Clingo and yields one
+        # empty model — which would falsely mark the puzzle as solved. This
+        # happens when the model exhausts its thinking-token budget without
+        # ever emitting </think>, so the response is empty. Convert to a
+        # syntax-style error so the refinement loop can prompt the model to
+        # reason more concisely on the next attempt.
+        if not program.strip():
+            msg = (
+                "Previous response contained no ASP code. The model's thinking "
+                "exceeded its token budget before producing a final answer. "
+                "Reason more concisely and ensure a complete ASP program is "
+                "emitted inside a ```asp ... ``` code block after </think>."
+            )
+            logger.warning("Empty ASP program received; routing to syntax refinement.")
+            return RuntimeError, [(0, msg)]
+
         clingo_messages = []
 
         def _clingo_logger(code, message):

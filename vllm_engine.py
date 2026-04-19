@@ -34,12 +34,16 @@ _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 def _split_thinking(text):
     """Return (thinking, response) extracted from a raw LLM output.
 
-    Two cases:
+    Three cases:
       A) Paired <think>...</think> — older GGUF tokenizers that ignored
          enable_thinking, so both tags appear in the generated text.
       B) Only </think> — the FP8 chat template injects the opening
          <think>\\n as part of the assistant prefix, so only the closing
          tag shows up in the output.
+      C) Neither tag while THINKING is enabled — generation hit the token
+         budget (or got stuck in a loop) before emitting </think>. Treat
+         the entire output as thinking and leave response empty so the
+         downstream pipeline can detect the overflow.
     """
     if "<think>" in text:
         thinking = "\n".join(m.strip() for m in _THINK_RE.findall(text))
@@ -48,6 +52,8 @@ def _split_thinking(text):
     if "</think>" in text:
         thinking, _, response = text.partition("</think>")
         return thinking.strip(), response.strip()
+    if THINKING:
+        return text.strip(), ""
     return "", text.strip()
 
 
