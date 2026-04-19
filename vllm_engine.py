@@ -1,12 +1,15 @@
-"""vLLM engine for batched local inference with Qwen3-30B-A3B."""
+"""vLLM engine for batched local inference with Qwen3.6-35B-A3B-FP8."""
 
 import os
 import re
 import time
 
+from huggingface_hub import snapshot_download
+
 from logger import setup_logging, get_logger
 from config import (
-    MODEL_PATH,
+    REPO_ID,
+    LANGUAGE_MODEL_ONLY,
     SEED,
     THINKING,
     MAX_TOKENS,
@@ -18,6 +21,8 @@ from config import (
     TOP_P,
     TOP_K,
     MIN_P,
+    PRESENCE_PENALTY,
+    REPETITION_PENALTY,
 )
 
 setup_logging(log_level=os.getenv("LOG_LEVEL", "debug"))
@@ -29,13 +34,21 @@ _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 def _split_thinking(text):
     """Return (thinking, response) extracted from a raw LLM output.
 
-    Thinking content is only surfaced for audit logging. The response with
-    <think>...</think> blocks removed is what downstream consumers use, so
-    thinking never bleeds into subsequent prompts.
+    Two cases:
+      A) Paired <think>...</think> — older GGUF tokenizers that ignored
+         enable_thinking, so both tags appear in the generated text.
+      B) Only </think> — the FP8 chat template injects the opening
+         <think>\\n as part of the assistant prefix, so only the closing
+         tag shows up in the output.
     """
-    thinking = "\n".join(m.strip() for m in _THINK_RE.findall(text))
-    response = _THINK_RE.sub("", text).strip()
-    return thinking, response
+    if "<think>" in text:
+        thinking = "\n".join(m.strip() for m in _THINK_RE.findall(text))
+        response = _THINK_RE.sub("", text).strip()
+        return thinking, response
+    if "</think>" in text:
+        thinking, _, response = text.partition("</think>")
+        return thinking.strip(), response.strip()
+    return "", text.strip()
 
 
 class VLLMEngine:
@@ -58,16 +71,38 @@ class VLLMEngine:
         """
         from vllm import LLM, SamplingParams
 
-        logger.info(f"Loading model from {MODEL_PATH}")
+        logger.info(f"Resolving snapshot for {REPO_ID}")
+        model_path = snapshot_download(
+            repo_id=REPO_ID,
+            allow_patterns=["*.safetensors", "*.json", "*.txt", "tokenizer*", "*.py"],
+        )
+        logger.info(f"Loading model from {model_path}")
         t0 = time.perf_counter()
-        self.llm = LLM(
-            model=MODEL_PATH,
+
+        llm_kwargs = dict(
+            model=model_path,
             max_model_len=max_model_len,
             max_num_seqs=max_num_seqs,
             max_num_batched_tokens=max_num_batched_tokens,
             gpu_memory_utilization=GPU_MEMORY_UTILIZATION,
             seed=seed,
         )
+        if LANGUAGE_MODEL_ONLY:
+            llm_kwargs["language_model_only"] = True
+
+        try:
+            self.llm = LLM(**llm_kwargs)
+        except TypeError as e:
+            if "language_model_only" not in str(e):
+                raise
+            logger.warning(
+                "language_model_only kwarg unsupported; "
+                "falling back to limit_mm_per_prompt={image:0, video:0}"
+            )
+            llm_kwargs.pop("language_model_only", None)
+            llm_kwargs["limit_mm_per_prompt"] = {"image": 0, "video": 0}
+            self.llm = LLM(**llm_kwargs)
+
         logger.info(f"Model loaded in {time.perf_counter() - t0:.2f}s")
 
         self.tokenizer = self.llm.get_tokenizer()
@@ -95,6 +130,8 @@ class VLLMEngine:
             top_p=TOP_P,
             top_k=TOP_K,
             min_p=MIN_P,
+            presence_penalty=PRESENCE_PENALTY,
+            repetition_penalty=REPETITION_PENALTY,
             seed=seed,
             stop_token_ids=stop_token_ids if stop_token_ids else None,
         )

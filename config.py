@@ -1,10 +1,7 @@
 # MODEL
-MODEL_PATH = (
-    "/home/dlindberg/.cache/huggingface/hub/"
-    "models--unsloth--Qwen3-30B-A3B-Thinking-2507-GGUF/snapshots/"
-    "a9b37aaac12b2bd0098783a443429543dd76a14d/"
-    "Qwen3-30B-A3B-Thinking-2507-Q4_K_M.gguf"
-)
+# Qwen3.6-35B-A3B-FP8 is multimodal; LANGUAGE_MODEL_ONLY skips the vision tower.
+REPO_ID = "Qwen/Qwen3.6-35B-A3B-FP8"
+LANGUAGE_MODEL_ONLY = True
 
 # Seed for vLLM to allow deterministic cache reuse across runs
 SEED = 132
@@ -28,11 +25,13 @@ MAX_TOKENS = 81_920
 MAX_MODEL_LEN = 94_000
 MAX_NUM_BATCHED_TOKENS = 8192
 MAX_NUM_SEQS = 25
-TEMPERATURE = 0.6
 GPU_MEMORY_UTILIZATION = 0.95
+TEMPERATURE = 0.6
 TOP_P = 0.95
 TOP_K = 20
 MIN_P = 0.0
+PRESENCE_PENALTY = 0.0
+REPETITION_PENALTY = 1.0
 
 # CLINGO
 # CLINGO_MAX_MODELS: cap model enumeration to detect severely under-constrained programs without hanging
@@ -49,7 +48,7 @@ SEVERELY_UNDERCONSTRAINED_THRESHOLD = 1000
 MAX_VARIABLE_ATOMS = 30
 
 # PIPELINE
-DEFAULT_ENGINE = "qwen3-30b-thinking"
+DEFAULT_ENGINE = "qwen36-35b-thinking"
 
 PROMPT_PATHS = {
     "asp_fewshot": "prompts/0_gen_asp_fewshot.txt",

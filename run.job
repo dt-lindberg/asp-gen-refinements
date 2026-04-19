@@ -21,13 +21,13 @@ HW_LOG="local-LLM/outputs/hw_monitor_${SLURM_JOB_ID}.csv"
 bash local-LLM/monitor_hw.sh "$HW_LOG" 10 &
 MONITOR_PID=$!
 
-source .venv/bin/activate
+source .venv_qwen36/bin/activate
 
 python3 main.py \
     --debug \
     --dataset_name train \
-    --num -1 \
-    --engine qwen3-30b-thinking \
+    --num 3 \
+    --engine qwen36-35b-thinking \
     --seed "${RUN_SEED:-132}" \
 
 # Stop monitor and print hardware report

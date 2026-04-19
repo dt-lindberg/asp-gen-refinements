@@ -1,0 +1,5 @@
+# Requirements for running vLLM with Qwen3.6-35B-A3B-FP8.
+# vLLM 0.19+ introduced support for the qwen35moe architecture.
+# Pinning is loose because vLLM pulls in compatible torch/transformers.
+vllm>=0.19.0
+huggingface_hub[cli]
