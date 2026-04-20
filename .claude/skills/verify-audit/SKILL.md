@@ -5,15 +5,16 @@ description: Use this skill to run the verification script on audit seed directo
 
 # Verify Audit
 
-Audit directories (`asp-gen-refinements/audit/`) contain per-puzzle JSON files produced by the pipeline. Each file has a `final.solved` flag. The verification script re-evaluates every `solved=true` entry against the ground truth and writes a corrected copy to a `-verified/` sibling directory. However, the script has false positives — it sometimes flips correct predictions to false. Every flip must be manually checked.
+Audit directories (`audit/`) contain per-puzzle JSON files produced by the pipeline. Each file has a `final.solved` flag. The verification script re-evaluates every `solved=true` entry against the ground truth and writes a corrected copy to a `-verified/` sibling directory. However, the script has false positives — it sometimes flips correct predictions to false. Every flip must be manually checked.
 
 ## Step 1 — Run the verification script
 
-The script lives at `asp-gen-refinements-V2/evaluation/scripts/verify_audit.py`. Run it once per seed directory:
+The script lives at `evaluation/scripts/verify_audit.py`. Always activate the project virtual environment first, then run once per seed directory:
 
 ```bash
-for seed in asp-gen-refinements/audit/vllm_qwen3-30b-thinking_seed*; do
-    python asp-gen-refinements-V2/evaluation/scripts/verify_audit.py "$seed"
+source .venv/bin/activate
+for seed in audit/vllm_qwen3-30b-thinking_seed*; do
+    python evaluation/scripts/verify_audit.py "$seed"
 done
 ```
 
@@ -97,7 +98,7 @@ For each confirmed false positive, set `final.solved = True` back in the `-verif
 import json
 
 false_positives = {
-    "asp-gen-refinements/audit/<seed_name>-verified": ["puzzle_001", "puzzle_005", ...],
+    "audit/<seed_name>-verified": ["puzzle_001", "puzzle_005", ...],
     # add one entry per seed
 }
 
@@ -122,7 +123,7 @@ After restoring, sanity-check the solved counts per seed:
 import json
 from pathlib import Path
 
-for verified_dir in sorted(Path("asp-gen-refinements/audit").glob("*-verified")):
+for verified_dir in sorted(Path("audit").glob("*-verified")):
     files = sorted(verified_dir.glob("puzzle_*.json"))
     solved = sum(1 for f in files if json.loads(f.read_text())["final"]["solved"])
     print(f"{verified_dir.name}: {solved}/{len(files)} solved")
