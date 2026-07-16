@@ -6,13 +6,18 @@
 #SBATCH --gpus=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --chdir=/home/dlindberg/Projects/asp-gen-refinements-V2
+#SBATCH --chdir=/home/dlindberg/Projects/asp-gen-refinements-V2-thinking
 #SBATCH --output=outputs/slurm_output_%A.out
 
 module purge
 module load 2025
 module load CUDA/12.8.0
 module load Python/3.13.5-GCCcore-14.3.0
+
+# Model weights are cached on /scratch-shared; config.py reads HF_HUB_CACHE to
+# build MODEL_PATH, so this must match what download_models.job used.
+export HF_HOME="${HF_HOME:-/scratch-shared/dlindberg/hf_cache}"
+export HF_HUB_CACHE="$HF_HOME/hub"
 
 mkdir -p outputs caches mistakes
 
@@ -21,16 +26,19 @@ HW_LOG="local-LLM/outputs/hw_monitor_${SLURM_JOB_ID}.csv"
 bash local-LLM/monitor_hw.sh "$HW_LOG" 10 &
 MONITOR_PID=$!
 
+# The venv is shared by all four config worktrees and lives in the V1 one.
 source /home/dlindberg/Projects/asp-gen-refinements/.venv/bin/activate
 
-export LOG_DIR=/home/dlindberg/Projects/asp-gen-refinements-V2/logs
+# logger.py requires LOG_DIR and only the V1 worktree has a .env to supply it.
+# Deriving it from the chdir above keeps logs with the config that produced them.
+export LOG_DIR="$PWD/logs"
 
 python3 main.py \
     --debug \
-    --dataset_name train \
-    --num -1 \
+    --dataset_name "${RUN_DATASET:-test}" \
+    --num "${RUN_NUM:-3}" \
     --engine qwen3-30b-thinking \
-    --seed "${RUN_SEED:-132}" \
+    --seed "${RUN_SEED:-735716}" \
 
 # Stop monitor and print hardware report
 kill "$MONITOR_PID" 2>/dev/null

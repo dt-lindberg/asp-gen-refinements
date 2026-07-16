@@ -21,7 +21,7 @@ Run the install job on Snellius (installs vLLM with CUDA support, then Clingo an
 sbatch install_env.job
 ```
 
-The model is loaded from the local HuggingFace cache (`~/.cache/huggingface/hub/`). Download it beforehand if not already present.
+The model is loaded from the HuggingFace cache on shared scratch (`/scratch-shared/dlindberg/hf_cache/hub/`), since the home quota is too small to hold the checkpoints alongside the venv. Run `download_models.job` beforehand if the weights are not already present. Both `run.job` and `download_models.job` export `HF_HUB_CACHE`, and `config.py` reads it to build `MODEL_PATH`; override it to point at a different cache.
 
 ## How to run
 
