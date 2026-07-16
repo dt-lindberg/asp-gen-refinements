@@ -1,9 +1,15 @@
+import os
+
 # MODEL
-MODEL_PATH = (
-    "/home/dlindberg/.cache/huggingface/hub/"
+# Weights live in the HuggingFace cache on /scratch-shared; the 200 GiB home
+# quota is too small to hold them alongside the venv. The job scripts export
+# HF_HUB_CACHE, and the default below matches so interactive use resolves too.
+HF_HUB_CACHE = os.environ.get("HF_HUB_CACHE", "/scratch-shared/dlindberg/hf_cache/hub")
+MODEL_PATH = os.path.join(
+    HF_HUB_CACHE,
     "models--unsloth--Qwen3-30B-A3B-Instruct-2507-GGUF/snapshots/"
     "eea7b2be5805a5f151f8847ede8e5f9a9284bf77/"
-    "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf"
+    "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
 )
 
 # Seed for vLLM to allow deterministic cache reuse across runs

@@ -32,7 +32,10 @@ def main(args):
     puzzle_pipeline = Pipeline(vars(args))
     puzzle_pipeline.path_prompt = PROMPT_PATHS
     seed_str = f"{args.seed:06d}"
-    prefix = f"vllm_{args.engine}_seed{seed_str}"
+    # Train runs keep the original unqualified name so previously committed
+    # audit dirs (and their -verified copies) stay addressable.
+    dataset_seg = "" if args.dataset_name == "train" else f"_{args.dataset_name}"
+    prefix = f"vllm_{args.engine}{dataset_seg}_seed{seed_str}"
 
     puzzle_pipeline.load_prompt()
 
