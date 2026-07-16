@@ -1,0 +1,59 @@
+#!/bin/bash
+
+#SBATCH --job-name=ModelDL
+#SBATCH --partition=rome
+#SBATCH --time=03:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --chdir=/home/dlindberg/Projects/asp-gen-refinements
+#SBATCH --output=outputs/download_models_%A.out
+
+# Re-download the two GGUF checkpoints the four eval configs depend on.
+# Revisions are pinned to the snapshot hashes hardcoded in config.py on each
+# branch, so the MODEL_PATH strings resolve without edits:
+#   Thinking-2507 a9b37aa... -> feature/qwen3-thinking-mode{,-V2}
+#   Instruct-2507 eea7b2b... -> feature/self-hosted-llm, asp-gen-refinements-V2
+
+module purge
+module load 2025
+module load Python/3.13.5-GCCcore-14.3.0
+
+# Cache model weights on /scratch-shared (200 GiB home quota is too small).
+export HF_HOME="${HF_HOME:-/scratch-shared/dlindberg/hf_cache}"
+export HF_HUB_CACHE="$HF_HOME/hub"
+mkdir -p "$HF_HUB_CACHE"
+
+source .venv/bin/activate
+
+python3 - <<'PY'
+from huggingface_hub import snapshot_download
+
+targets = [
+    (
+        "unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF",
+        "a9b37aaac12b2bd0098783a443429543dd76a14d",
+        "Qwen3-30B-A3B-Thinking-2507-Q4_K_M.gguf",
+    ),
+    (
+        "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF",
+        "eea7b2be5805a5f151f8847ede8e5f9a9284bf77",
+        "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
+    ),
+]
+
+for repo_id, revision, filename in targets:
+    print(f"[DL] {repo_id}@{revision[:7]} -> {filename}", flush=True)
+    path = snapshot_download(
+        repo_id=repo_id,
+        revision=revision,
+        allow_patterns=[filename],
+        max_workers=4,
+    )
+    print(f"[DL] done: {path}", flush=True)
+PY
+
+echo ""
+echo "=== Resolved model files ==="
+find "$HF_HUB_CACHE" -name "*Q4_K_M.gguf" -exec ls -lL {} \;
+echo "Exiting job"
