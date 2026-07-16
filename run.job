@@ -6,7 +6,7 @@
 #SBATCH --gpus=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --chdir=/home/dlindberg/Projects/asp-gen-refinements
+#SBATCH --chdir=/home/dlindberg/Projects/asp-gen-refinements-thinking
 #SBATCH --output=outputs/slurm_output_%A.out
 
 module purge
@@ -26,7 +26,12 @@ HW_LOG="local-LLM/outputs/hw_monitor_${SLURM_JOB_ID}.csv"
 bash local-LLM/monitor_hw.sh "$HW_LOG" 10 &
 MONITOR_PID=$!
 
-source .venv/bin/activate
+# The venv is shared by all four config worktrees and lives in the V1 one.
+source /home/dlindberg/Projects/asp-gen-refinements/.venv/bin/activate
+
+# logger.py requires LOG_DIR and only the V1 worktree has a .env to supply it.
+# Deriving it from the chdir above keeps logs with the config that produced them.
+export LOG_DIR="$PWD/logs"
 
 python3 main.py \
     --debug \
